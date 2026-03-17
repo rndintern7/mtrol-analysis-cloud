@@ -46,14 +46,14 @@ st.markdown("""
 # --- CONFIGURATION (Zoomed Out) ---
 MT3_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [180, 340], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
-    "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "2449.99"},
-    "p1": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.6029, "min": 0.0, "ppm": "21455.76"},
-    "p2": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.0592, "min": 0.0, "ppm": "20355.54"}
+    "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "308.42"},
+    "p1": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.6029, "min": 0.0, "ppm": "19362.57"},
+    "p2": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.0592, "min": 0.0, "ppm": "9010.37"}
 }
 
 MT4_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [180, 340], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
-    "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "2170.41"},
+    "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "231.453"},
     "p1": {"unit": "bar", "range": [3, 7], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
     "p2": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
