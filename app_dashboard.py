@@ -11,19 +11,21 @@ st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
 
-# --- CONFIGURATION: RANGES & TARGETS ---
+# --- CONFIGURATION: RANGES & REFERENCE STATS ---
+# Added your specific Max/Min values for Mtrol 3
 MT3_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "dtick": 20, "ref": 200.0},
-    "opening": {"unit": "%", "range": [-20, 70], "dtick": 10, "ref": 100.0},
-    "p1": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0},
-    "p2": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0}
+    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 200.0, "max": 303.5447, "min": 0.0},
+    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 22.0132, "min": 0.0},
+    "p1": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.6029, "min": 0.0},
+    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.0592, "min": 0.0}
 }
 
+# Added your specific Max/Min values for Mtrol 4
 MT4_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "dtick": 20, "ref": 500.0},
-    "opening": {"unit": "%", "range": [-20, 70], "dtick": 10, "ref": 100.0},
-    "p1": {"unit": "bar", "range": [4, 6], "dtick": 0.5, "ref": 17.0},
-    "p2": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0}
+    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 500.0, "max": 275.1067, "min": 0.0},
+    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 19.5011, "min": 0.0},
+    "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062},
+    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.7396, "min": 10.5863}
 }
 
 TEMP_WINDOW = [-20, 70]
@@ -33,13 +35,11 @@ END_TIME = "2026-03-13 11:30:00"
 
 @st.cache_data
 def load_and_sync(dev_file, temp_file):
-    # Load Chamber Temp
     df_t = pd.read_csv(temp_file).dropna(how='all')
     df_t.columns = ['Timestamp', 'Temp']
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
-    # Load Device Data
     df_d = pd.read_csv(dev_file)
     time_col = next((c for c in df_d.columns if "time" in c.lower()), "Time Stamp")
     df_d[time_col] = pd.to_datetime(df_d[time_col], errors='coerce')
@@ -75,27 +75,27 @@ if dev_upload and temp_upload:
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
             std = lookup[key]
 
-            # Calculation Stats
-            p_min, p_max = df_full[selected].min(), df_full[selected].max()
-            t_min, t_max = df_full['Temp'].min(), df_full['Temp'].max()
-            drift = p_max - p_min
+            # Use your provided Reference Stats for the top row
+            p_min_ref, p_max_ref = std["min"], std["max"]
+            t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
-            # Logic for PPM Display
+            # PPM Logic
             if key == "flow":
-                ppm_display = "—"
+                ppm_val = "—"
             else:
+                drift = p_max_ref - p_min_ref
                 calc_ppm = (drift * 1000000) / (TEMP_DELTA_FIXED * std["ref"])
-                ppm_display = f"{calc_ppm:.2f}"
+                ppm_val = f"{calc_ppm:.2f}"
 
             # --- HORIZONTAL METRICS AT TOP ---
-            st.markdown(f"### {selected} Analysis Summary")
+            st.markdown(f"### {selected} Reference Summary")
             col1, col2, col3, col4, col5 = st.columns(5)
             
-            col1.metric(f"Min {selected}", f"{p_min:.3f}")
-            col2.metric(f"Max {selected}", f"{p_max:.3f}")
-            col3.metric("Min Temp", f"{t_min:.1f} °C")
-            col4.metric("Max Temp", f"{t_max:.1f} °C")
-            col5.metric(f"{selected} PPM", ppm_display)
+            col1.metric(f"Ref Min {selected}", f"{p_min_ref:.4f}")
+            col2.metric(f"Ref Max {selected}", f"{p_max_ref:.4f}")
+            col3.metric("Observed Min Temp", f"{t_min_obs:.1f} °C")
+            col4.metric("Observed Max Temp", f"{t_max_obs:.1f} °C")
+            col5.metric(f"{selected} PPM", ppm_val)
 
             # --- PLOTTING ---
             display_df = df_full.iloc[::2] if len(df_full) > 20000 else df_full
