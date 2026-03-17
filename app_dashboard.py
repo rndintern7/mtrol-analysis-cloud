@@ -56,7 +56,7 @@ MT4_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [0, 300], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
     "opening": {"unit": "%", "range": [15, 25], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "231.453"},
     "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
-    "p2": {"unit": "bar", "range": [8, 12], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
+    "p2": {"unit": "bar", "range": [10.01, 11.00], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
 
 TEMP_WINDOW_ZOOMED = [-30, 80]
