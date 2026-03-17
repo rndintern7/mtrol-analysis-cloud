@@ -10,7 +10,7 @@ st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 # --- CUSTOM CSS FOR MOUSE CURSOR & BOXES ---
 st.markdown("""
     <style>
-    /* Force the mouse arrow cursor on the entire plot area */
+    /* Force standard arrow cursor */
     .js-plotly-plot .plotly .cursor-crosshair {
         cursor: default !important;
     }
@@ -44,22 +44,24 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (Zoomed Out Ranges) ---
+# I've widened the 'range' values slightly to provide padding (Zoom Out)
 MT3_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
-    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "2449.99"},
-    "p1": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.6029, "min": 0.0, "ppm": "21455.76"},
-    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.0592, "min": 0.0, "ppm": "20355.54"}
+    "flow": {"unit": "Kg/Hr", "range": [180, 340], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
+    "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "2449.99"},
+    "p1": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.6029, "min": 0.0, "ppm": "21455.76"},
+    "p2": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.0592, "min": 0.0, "ppm": "20355.54"}
 }
 
 MT4_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
-    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "2170.41"},
-    "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
-    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
+    "flow": {"unit": "Kg/Hr", "range": [180, 340], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
+    "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "2170.41"},
+    "p1": {"unit": "bar", "range": [3, 7], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
+    "p2": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
 
-TEMP_WINDOW = [-20, 70]
+# Zoomed out Temp range
+TEMP_WINDOW_ZOOMED = [-30, 80]
 START_TIME = "2026-03-11 10:20:00"
 END_TIME = "2026-03-13 11:30:00"
 
@@ -134,18 +136,21 @@ if dev_upload and temp_upload:
             ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", height=600,
-                dragmode=False, # Disables scaling/zoom box
-                hovermode="x",  # Tooltip follows mouse
-                xaxis=dict(title="Timeline", fixedrange=True), # Disables panning
+                template="plotly_dark", height=650,
+                dragmode=False, 
+                hovermode="x",
+                xaxis=dict(
+                    title="<b>Time Stamp</b>", # ADDED NAME TO BOTTOM
+                    rangeslider=dict(visible=True, thickness=0.05), # ADDED SLIDER
+                    fixedrange=False # Allowed for slider use
+                ),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
-                yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
+                yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=True),
                 margin=dict(t=20),
-                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center")
+                legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center")
             )
             
-            # config hides the toolbar so the mouse stays clean
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
             # --- TABLE ---
             st.divider()
