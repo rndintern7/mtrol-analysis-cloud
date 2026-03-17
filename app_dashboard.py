@@ -9,10 +9,11 @@ st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 # --- CUSTOM CSS FOR MOUSE CURSOR & BOXES ---
 st.markdown("""
     <style>
-    /* Force standard arrow pointer cursor */
+    /* Force standard arrow pointer cursor on plot and all sub-elements */
     .js-plotly-plot .plotly .cursor-crosshair,
     .js-plotly-plot .plotly .cursor-pointer,
     .js-plotly-plot .plotly .nsewdrag,
+    .js-plotly-plot .plotly .drag,
     .plot-container {
         cursor: default !important;
     }
@@ -43,7 +44,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURATION (Zoomed Out) ---
+# --- CONFIGURATION ---
 MT3_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [180, 340], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
     "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "308.42"},
@@ -114,52 +115,59 @@ if dev_upload and temp_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
+            # --- LAG PREVENTION: DECIMATION ---
+            # If dataset > 50k points, we plot every 2nd point for 2x performance
+            step = 1 if len(df_full) < 50000 else 2
+            df_plot = df_full.iloc[::step]
+
             # --- PLOTTING (UNIFIED BOX) ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
             # Param markers (1s)
             fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
-                marker=dict(size=4, color="#00CCFF", opacity=0.6),
+                x=df_plot['Full_Time'], y=df_plot[selected], mode='markers', 
+                marker=dict(size=3, color="#00CCFF", opacity=0.4),
                 name=f"{selected}",
-                hovertemplate="%{y:.4f}<extra></extra>" # Clean value display
+                hovertemplate="%{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Temp markers (2min) - Interpolated for unified display
-            # Note: Using 'ffill' here ONLY for the hover display to ensure Temp shows in the same box
-            df_hover = df_full.copy().ffill()
-            
+            # Invisible layer for Temp in the same hover box
+            df_hover_temp = df_full.ffill()
             fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full['Temp'], mode='markers', 
-                marker=dict(size=8, color="#FFD700", symbol='diamond', opacity=0), # Invisible markers to link to hover
-                name="Temp",
+                x=df_plot['Full_Time'], y=df_hover_temp.loc[df_plot.index, 'Temp'], mode='markers', 
+                marker=dict(size=0, opacity=0), 
+                name="Chamber Temp",
                 hovertemplate="%{y:.2f}°C<extra></extra>",
                 showlegend=False
             ), secondary_y=True)
 
-            # Visible Diamond Points (to show where actual readings are)
+            # Visible Yellow Circles for Temp (Original points)
             temp_points = df_full.dropna(subset=['Temp'])
             fig.add_trace(go.Scattergl(
                 x=temp_points['Full_Time'], y=temp_points['Temp'], mode='markers',
-                marker=dict(size=10, color="#FFD700", symbol='diamond'),
-                name="Temp Readings",
+                marker=dict(size=6, color="#FFD700", symbol='circle'),
+                name="Actual Temp Readings",
                 hoverinfo='skip'
             ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", height=700,
+                template="plotly_dark", height=650,
                 dragmode=False, 
-                hovermode="x unified", # THIS CREATES THE SINGLE BOX
+                hovermode="x unified",
+                # Performance tweaks
+                hoverdistance=20,
+                spikedistance=20,
                 xaxis=dict(
                     title="<b>Time Stamp</b>",
-                    rangeslider=dict(visible=True, thickness=0.08),
-                    fixedrange=False
+                    rangeslider=dict(visible=True, thickness=0.06),
+                    fixedrange=False,
+                    showspikes=True, spikemode="across", spikesnap="cursor", spikedash="dot", spikethickness=1
                 ),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=True),
                 margin=dict(t=30, b=10),
-                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
-                hoverlabel=dict(bgcolor="#2a2a2a", font_size=13, font_family="Arial")
+                legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center"),
+                hoverlabel=dict(bgcolor="#1e1e1e", font_size=13, font_family="Arial")
             )
             
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
