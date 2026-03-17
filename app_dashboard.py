@@ -16,26 +16,22 @@ st.markdown("""
         background-color: #1e1e1e;
         border-radius: 10px;
         border: 1px solid #333;
-        min-height: 100px; /* Fixed height for all boxes */
+        min-height: 100px;
         display: flex;
         flex-direction: column;
         justify-content: center;
     }
     .metric-label {
         font-size: 18px !important; 
-        font-weight: 700; /* Heavier weight for Heading */
+        font-weight: 700;
         color: #FFD700;
         margin-bottom: 8px;
         line-height: 1.2;
     }
     .metric-value {
         font-size: 16px !important;
-        font-weight: 400; /* Lighter weight for Numeric Value */
+        font-weight: 400;
         color: #ffffff;
-    }
-    /* Remove default streamlit padding above columns */
-    .stHorizontalBlock {
-        align-items: center;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -99,7 +95,7 @@ if dev_upload and temp_upload:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
             std = lookup["p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"]
 
-            # Metrics Row (No Header Line)
+            # --- METRICS ROW ---
             cols = st.columns(5)
             t_min_obs = df_full['Temp'].min()
             t_max_obs = df_full['Temp'].max()
@@ -114,31 +110,56 @@ if dev_upload and temp_upload:
 
             for i, (label, val) in enumerate(metrics_data):
                 with cols[i]:
-                    st.markdown(f"""
-                        <div class="metric-container">
-                            <div class="metric-label">{label}</div>
-                            <div class="metric-value">{val}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- PLOTTING ---
+            # --- PLOTTING WITH ENHANCED CURSOR ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-            fig.add_trace(go.Scattergl(x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
-                                       marker=dict(size=2.5, color="#00CCFF", opacity=0.4), name=f"{selected} (1s)"), secondary_y=False)
+            
+            # Param markers (1s) - Added customdata for precise hover
+            fig.add_trace(go.Scattergl(
+                x=df_full['Full_Time'], 
+                y=df_full[selected], 
+                mode='markers', 
+                marker=dict(size=3, color="#00CCFF", opacity=0.5),
+                name=f"{selected}",
+                hovertemplate="Value: %{y:.4f}<extra></extra>"
+            ), secondary_y=False)
 
+            # Temp markers (2min)
             temp_plot_df = df_full.dropna(subset=['Temp'])
-            fig.add_trace(go.Scattergl(x=temp_plot_df['Full_Time'], y=temp_plot_df['Temp'], mode='markers', 
-                                       marker=dict(size=6, color="#FFD700", symbol='diamond'), name="Temp (2-min)"), secondary_y=True)
+            fig.add_trace(go.Scattergl(
+                x=temp_plot_df['Full_Time'], 
+                y=temp_plot_df['Temp'], 
+                mode='markers', 
+                marker=dict(size=8, color="#FFD700", symbol='diamond', line=dict(width=1, color="white")),
+                name="Chamber Temp",
+                hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
+            ), secondary_y=True)
 
-            fig.update_layout(template="plotly_dark", height=600, hovermode="x unified",
-                              xaxis=dict(title="Timeline", rangeslider=dict(visible=True)),
-                              yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
-                              yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
-                              legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
-                              margin=dict(t=20)) # Reduced top margin since header is gone
+            fig.update_layout(
+                template="plotly_dark", 
+                height=600, 
+                # --- PROPER CURSOR CONFIG ---
+                hovermode="x unified", # Vertical line cursor
+                hoverlabel=dict(bgcolor="#222", font_size=14, font_family="Arial"),
+                xaxis=dict(
+                    title="Timeline", 
+                    rangeslider=dict(visible=True),
+                    showspikes=True, # Dash lines following cursor
+                    spikemode="across",
+                    spikethickness=1,
+                    spikedash="dash",
+                    spikecolor="#999"
+                ),
+                yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
+                yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
+                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+                margin=dict(t=30)
+            )
+            
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- CLEANED DATASET TABLE ---
+            # --- TABLE ---
             st.divider()
             st.subheader("📄 Original Synced Dataset")
             df_display = df_full.fillna("—")
