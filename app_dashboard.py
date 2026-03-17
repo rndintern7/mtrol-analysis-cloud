@@ -52,13 +52,13 @@ END_TIME = "2026-03-13 11:30:00"
 
 @st.cache_data
 def load_and_sync(dev_file, temp_file):
-    # 1. Load Chamber Temp (2-min intervals)
+    # 1. Load Chamber Temp (Raw 2-min points)
     df_t = pd.read_csv(temp_file).dropna(how='all')
     df_t.columns = ['Timestamp', 'Temp']
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
-    # 2. Load Device Data (1-sec intervals)
+    # 2. Load Device Data (1-sec points)
     df_d = pd.read_csv(dev_file)
     time_col = next((c for c in df_d.columns if "time" in c.lower()), "Time Stamp")
     df_d[time_col] = pd.to_datetime(df_d[time_col], errors='coerce')
@@ -70,13 +70,10 @@ def load_and_sync(dev_file, temp_file):
     
     df_d = df_d.groupby(time_col).mean().sort_index()
 
-    # 3. Synchronize using Time-based Join
+    # 3. Join without interpolation (keeps Temp points only at original timestamps)
     combined = pd.concat([df_d, df_t], axis=1)
     
-    # 4. Interpolate Temp to match 1-sec device frequency
-    combined['Temp'] = combined['Temp'].interpolate(method='time').round(2)
-    
-    # 5. Filter for the March 11-13 Window
+    # 4. Filter for Window
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
 
@@ -100,9 +97,10 @@ if dev_upload and temp_upload:
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
             std = lookup[key]
 
-            # Metric Values (Based on your Reference constants)
+            # Calculation Stats
             p_min_ref, p_max_ref = std["min"], std["max"]
-            t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
+            t_min_obs = df_full['Temp'].min()
+            t_max_obs = df_full['Temp'].max()
             
             if key == "flow":
                 ppm_val = "—"
@@ -111,10 +109,9 @@ if dev_upload and temp_upload:
                 calc_ppm = (drift * 1000000) / (TEMP_DELTA_FIXED * std["ref"])
                 ppm_val = f"{calc_ppm:.2f}"
 
-            # --- HORIZONTAL CUSTOM METRICS AT TOP ---
+            # --- HORIZONTAL METRICS ---
             st.markdown(f"### {selected} Summary")
             cols = st.columns(5)
-            
             metrics = [
                 (f"Min {selected}", f"{p_min_ref:.4f}"),
                 (f"Max {selected}", f"{p_max_ref:.4f}"),
@@ -122,50 +119,45 @@ if dev_upload and temp_upload:
                 ("Max Temp", f"{t_max_obs:.1f} °C"),
                 (f"{selected} PPM", ppm_val)
             ]
-
             for i, (label, val) in enumerate(metrics):
                 with cols[i]:
-                    st.markdown(f"""
-                        <div class="metric-container">
-                            <div class="metric-label">{label}</div>
-                            <div class="metric-value">{val}</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
             # --- PLOTTING ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Use raw data for calculation, but slice for plot performance if needed
-            display_df = df_full.iloc[::2] if len(df_full) > 30000 else df_full
-            
+            # Primary: Parameter (1s markers)
             fig.add_trace(go.Scattergl(
-                x=display_df['Full_Time'], y=display_df[selected], 
-                mode='markers', marker=dict(size=3, color="#00CCFF", opacity=0.5),
-                name=f"{selected} (1s Data)"
+                x=df_full['Full_Time'], y=df_full[selected], 
+                mode='markers', marker=dict(size=2.5, color="#00CCFF", opacity=0.4),
+                name=f"{selected} (1s)"
             ), secondary_y=False)
 
+            # Secondary: Temperature (2-min markers ONLY, no lines)
+            # We drop NaNs here so plotly only plots the existing 2-min points
+            temp_df = df_full.dropna(subset=['Temp'])
+            
             fig.add_trace(go.Scattergl(
-                x=display_df['Full_Time'], y=display_df['Temp'], 
-                mode='lines', line=dict(color="#FFD700", dash='dot', width=2),
-                name="Chamber Temp (Synced)"
+                x=temp_df['Full_Time'], y=temp_df['Temp'], 
+                mode='markers', marker=dict(size=6, color="#FFD700", symbol='diamond'),
+                name="Chamber Temp (2-min points)"
             ), secondary_y=True)
 
             fig.update_layout(
                 template="plotly_dark", height=600, hovermode="x unified",
-                xaxis=dict(title="Timeline (March 11 - 13)", rangeslider=dict(visible=True)),
+                xaxis=dict(title="Timeline", rangeslider=dict(visible=True)),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
                 legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center")
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- RAW DATASET AT BOTTOM ---
+            # --- RAW DATASET ---
             st.divider()
             st.subheader("📄 Original Synced Dataset")
-            st.write("This table shows the 1-second device data synchronized with the 2-minute chamber readings.")
             st.dataframe(df_full, use_container_width=True, height=400)
             
     except Exception as e:
-        st.error(f"Synchronization Error: {e}")
+        st.error(f"Error: {e}")
 else:
-    st.info("Upload CSV files to begin time-synced analysis.")
+    st.info("Upload CSV files to begin.")
