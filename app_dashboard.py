@@ -30,35 +30,34 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURATION: RANGES & REFERENCE STATS ---
+# --- CONFIGURATION: RANGES, REFERENCE STATS & TARGET PPM ---
 MT3_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 200.0, "max": 303.5447, "min": 0.0},
-    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 22.0132, "min": 0.0},
-    "p1": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.6029, "min": 0.0},
-    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.0592, "min": 0.0}
+    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
+    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "2449.99"},
+    "p1": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.6029, "min": 0.0, "ppm": "21455.76"},
+    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.0592, "min": 0.0, "ppm": "20355.54"}
 }
 
 MT4_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 500.0, "max": 275.1067, "min": 0.0},
-    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 19.5011, "min": 0.0},
-    "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062},
-    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.7396, "min": 10.5863}
+    "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
+    "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "2170.41"},
+    "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
+    "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
 
 TEMP_WINDOW = [-20, 70]
-TEMP_DELTA_FIXED = 89.85
 START_TIME = "2026-03-11 10:20:00"
 END_TIME = "2026-03-13 11:30:00"
 
 @st.cache_data
 def load_and_sync(dev_file, temp_file):
-    # 1. Load Chamber Temp (Raw 2-min points)
+    # Load Chamber Temp (Raw 2-min points)
     df_t = pd.read_csv(temp_file).dropna(how='all')
     df_t.columns = ['Timestamp', 'Temp']
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
-    # 2. Load Device Data (1-sec points)
+    # Load Device Data (1-sec points)
     df_d = pd.read_csv(dev_file)
     time_col = next((c for c in df_d.columns if "time" in c.lower()), "Time Stamp")
     df_d[time_col] = pd.to_datetime(df_d[time_col], errors='coerce')
@@ -69,11 +68,7 @@ def load_and_sync(dev_file, temp_file):
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
     df_d = df_d.groupby(time_col).mean().sort_index()
-
-    # 3. Join without interpolation (keeps Temp points only at original timestamps)
     combined = pd.concat([df_d, df_t], axis=1)
-    
-    # 4. Filter for Window
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
 
@@ -97,26 +92,20 @@ if dev_upload and temp_upload:
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
             std = lookup[key]
 
-            # Calculation Stats
+            # Metric Values from provided references
             p_min_ref, p_max_ref = std["min"], std["max"]
             t_min_obs = df_full['Temp'].min()
             t_max_obs = df_full['Temp'].max()
-            
-            if key == "flow":
-                ppm_val = "—"
-            else:
-                drift = p_max_ref - p_min_ref
-                calc_ppm = (drift * 1000000) / (TEMP_DELTA_FIXED * std["ref"])
-                ppm_val = f"{calc_ppm:.2f}"
+            ppm_val = std["ppm"]
 
-            # --- HORIZONTAL METRICS ---
+            # --- HORIZONTAL CUSTOM METRICS ---
             st.markdown(f"### {selected} Summary")
             cols = st.columns(5)
             metrics = [
                 (f"Min {selected}", f"{p_min_ref:.4f}"),
                 (f"Max {selected}", f"{p_max_ref:.4f}"),
-                ("Min Temp", f"{t_min_obs:.1f} °C"),
-                ("Max Temp", f"{t_max_obs:.1f} °C"),
+                ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "N/A"),
+                ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "N/A"),
                 (f"{selected} PPM", ppm_val)
             ]
             for i, (label, val) in enumerate(metrics):
@@ -133,14 +122,12 @@ if dev_upload and temp_upload:
                 name=f"{selected} (1s)"
             ), secondary_y=False)
 
-            # Secondary: Temperature (2-min markers ONLY, no lines)
-            # We drop NaNs here so plotly only plots the existing 2-min points
+            # Secondary: Temp (Original 2-min points ONLY)
             temp_df = df_full.dropna(subset=['Temp'])
-            
             fig.add_trace(go.Scattergl(
                 x=temp_df['Full_Time'], y=temp_df['Temp'], 
                 mode='markers', marker=dict(size=6, color="#FFD700", symbol='diamond'),
-                name="Chamber Temp (2-min points)"
+                name="Chamber Temp (2-min)"
             ), secondary_y=True)
 
             fig.update_layout(
