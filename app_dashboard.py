@@ -6,10 +6,10 @@ from plotly.subplots import make_subplots
 # 1. Page Config
 st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 
-# --- CUSTOM CSS FOR IMAGE-TYPE CURSOR & PERFORMANCE ---
+# --- CUSTOM CSS FOR MOUSE CURSOR & BOXES ---
 st.markdown("""
     <style>
-    /* Force standard arrow pointer cursor across the entire plot */
+    /* Force standard arrow pointer cursor */
     .js-plotly-plot .plotly .cursor-crosshair,
     .js-plotly-plot .plotly .cursor-pointer,
     .js-plotly-plot .plotly .nsewdrag,
@@ -17,7 +17,7 @@ st.markdown("""
         cursor: default !important;
     }
 
-    /* Standardized Metric Boxes */
+    /* Metric Box Styling */
     .metric-container {
         text-align: center;
         padding: 15px 10px;
@@ -102,7 +102,7 @@ if dev_upload and temp_upload:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
             std = lookup["p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"]
 
-            # Metrics
+            # --- METRICS ROW ---
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             metrics_data = [(f"Min {selected}", f"{std['min']:.4f}"), (f"Max {selected}", f"{std['max']:.4f}"),
@@ -114,43 +114,52 @@ if dev_upload and temp_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- LAG-FREE PLOTTING ---
+            # --- PLOTTING (UNIFIED BOX) ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Optimization: If dataset is huge (>50k), we plot every 2nd point for smoothness
-            # but hover still shows the high-precision 1s data.
-            step = 1 if len(df_full) < 50000 else 2
-            plot_df = df_full.iloc[::step]
-
+            # Param markers (1s)
             fig.add_trace(go.Scattergl(
-                x=plot_df['Full_Time'], y=plot_df[selected], mode='markers', 
-                marker=dict(size=3, color="#00CCFF", opacity=0.5),
+                x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
+                marker=dict(size=4, color="#00CCFF", opacity=0.6),
                 name=f"{selected}",
-                hovertemplate="Time: %{x|%H:%M:%S}<br>Value: %{y:.4f}<extra></extra>"
+                hovertemplate="%{y:.4f}<extra></extra>" # Clean value display
             ), secondary_y=False)
 
-            temp_plot_df = df_full.dropna(subset=['Temp'])
+            # Temp markers (2min) - Interpolated for unified display
+            # Note: Using 'ffill' here ONLY for the hover display to ensure Temp shows in the same box
+            df_hover = df_full.copy().ffill()
+            
             fig.add_trace(go.Scattergl(
-                x=temp_plot_df['Full_Time'], y=temp_plot_df['Temp'], mode='markers', 
-                marker=dict(size=8, color="#FFD700", symbol='diamond'),
+                x=df_full['Full_Time'], y=df_full['Temp'], mode='markers', 
+                marker=dict(size=8, color="#FFD700", symbol='diamond', opacity=0), # Invisible markers to link to hover
                 name="Temp",
-                hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
+                hovertemplate="%{y:.2f}°C<extra></extra>",
+                showlegend=False
+            ), secondary_y=True)
+
+            # Visible Diamond Points (to show where actual readings are)
+            temp_points = df_full.dropna(subset=['Temp'])
+            fig.add_trace(go.Scattergl(
+                x=temp_points['Full_Time'], y=temp_points['Temp'], mode='markers',
+                marker=dict(size=10, color="#FFD700", symbol='diamond'),
+                name="Temp Readings",
+                hoverinfo='skip'
             ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", height=650,
+                template="plotly_dark", height=700,
                 dragmode=False, 
-                hovermode="x",
-                hoverdistance=100, # Increases the "catch" area for the cursor to reduce lag feel
+                hovermode="x unified", # THIS CREATES THE SINGLE BOX
                 xaxis=dict(
                     title="<b>Time Stamp</b>",
-                    rangeslider=dict(visible=True, thickness=0.06),
+                    rangeslider=dict(visible=True, thickness=0.08),
                     fixedrange=False
                 ),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=True),
-                margin=dict(t=20),
-                legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center")
+                margin=dict(t=30, b=10),
+                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+                hoverlabel=dict(bgcolor="#2a2a2a", font_size=13, font_family="Arial")
             )
             
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
