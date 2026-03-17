@@ -7,9 +7,28 @@ import os
 # 1. Page Config
 st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 
-# --- SIDEBAR LOGO ---
-if os.path.exists("logo.png"):
-    st.sidebar.image("logo.png", use_container_width=True)
+# --- CUSTOM CSS FOR FONT SIZING ---
+st.markdown("""
+    <style>
+    .metric-container {
+        text-align: center;
+        padding: 10px;
+        background-color: #1e1e1e;
+        border-radius: 10px;
+        border: 1px solid #333;
+    }
+    .metric-label {
+        font-size: 20px !important;
+        font-weight: bold;
+        color: #FFD700;
+        margin-bottom: 5px;
+    }
+    .metric-value {
+        font-size: 16px !important;
+        color: #ffffff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- CONFIGURATION: RANGES & REFERENCE STATS ---
 MT3_CONFIG = {
@@ -33,11 +52,13 @@ END_TIME = "2026-03-13 11:30:00"
 
 @st.cache_data
 def load_and_sync(dev_file, temp_file):
+    # 1. Load Chamber Temp (2-min intervals)
     df_t = pd.read_csv(temp_file).dropna(how='all')
     df_t.columns = ['Timestamp', 'Temp']
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
+    # 2. Load Device Data (1-sec intervals)
     df_d = pd.read_csv(dev_file)
     time_col = next((c for c in df_d.columns if "time" in c.lower()), "Time Stamp")
     df_d[time_col] = pd.to_datetime(df_d[time_col], errors='coerce')
@@ -48,13 +69,19 @@ def load_and_sync(dev_file, temp_file):
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
     df_d = df_d.groupby(time_col).mean().sort_index()
+
+    # 3. Synchronize using Time-based Join
     combined = pd.concat([df_d, df_t], axis=1)
-    combined['Temp'] = combined['Temp'].interpolate(method='time')
+    
+    # 4. Interpolate Temp to match 1-sec device frequency
+    combined['Temp'] = combined['Temp'].interpolate(method='time').round(2)
+    
+    # 5. Filter for the March 11-13 Window
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
 
 # --- UI ---
-st.title("Mtrol Precision Analytics - Cloud View")
+st.title("Mtrol Precision Analytics")
 
 st.sidebar.header("📁 Step 1: Data Upload")
 dev_upload = st.sidebar.file_uploader("Upload Device CSV", type=['csv'])
@@ -73,7 +100,7 @@ if dev_upload and temp_upload:
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
             std = lookup[key]
 
-            # Metric Values
+            # Metric Values (Based on your Reference constants)
             p_min_ref, p_max_ref = std["min"], std["max"]
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
@@ -84,35 +111,48 @@ if dev_upload and temp_upload:
                 calc_ppm = (drift * 1000000) / (TEMP_DELTA_FIXED * std["ref"])
                 ppm_val = f"{calc_ppm:.2f}"
 
-            # --- HORIZONTAL METRICS AT TOP ---
+            # --- HORIZONTAL CUSTOM METRICS AT TOP ---
             st.markdown(f"### {selected} Summary")
-            col1, col2, col3, col4, col5 = st.columns(5)
+            cols = st.columns(5)
             
-            col1.metric(f"Min {selected}", f"{p_min_ref:.4f}")
-            col2.metric(f"Max {selected}", f"{p_max_ref:.4f}")
-            col3.metric("Min Temp", f"{t_min_obs:.1f} °C")
-            col4.metric("Max Temp", f"{t_max_obs:.1f} °C")
-            col5.metric(f"{selected} PPM", ppm_val)
+            metrics = [
+                (f"Min {selected}", f"{p_min_ref:.4f}"),
+                (f"Max {selected}", f"{p_max_ref:.4f}"),
+                ("Min Temp", f"{t_min_obs:.1f} °C"),
+                ("Max Temp", f"{t_max_obs:.1f} °C"),
+                (f"{selected} PPM", ppm_val)
+            ]
+
+            for i, (label, val) in enumerate(metrics):
+                with cols[i]:
+                    st.markdown(f"""
+                        <div class="metric-container">
+                            <div class="metric-label">{label}</div>
+                            <div class="metric-value">{val}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
 
             # --- PLOTTING ---
-            display_df = df_full.iloc[::2] if len(df_full) > 20000 else df_full
             fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            # Use raw data for calculation, but slice for plot performance if needed
+            display_df = df_full.iloc[::2] if len(df_full) > 30000 else df_full
             
             fig.add_trace(go.Scattergl(
                 x=display_df['Full_Time'], y=display_df[selected], 
-                mode='markers', marker=dict(size=3, color="#00CCFF", opacity=0.6),
-                name=f"{selected}"
+                mode='markers', marker=dict(size=3, color="#00CCFF", opacity=0.5),
+                name=f"{selected} (1s Data)"
             ), secondary_y=False)
 
             fig.add_trace(go.Scattergl(
                 x=display_df['Full_Time'], y=display_df['Temp'], 
                 mode='lines', line=dict(color="#FFD700", dash='dot', width=2),
-                name="Chamber Temp"
+                name="Chamber Temp (Synced)"
             ), secondary_y=True)
 
             fig.update_layout(
                 template="plotly_dark", height=600, hovermode="x unified",
-                xaxis=dict(title="Timeline", rangeslider=dict(visible=True)),
+                xaxis=dict(title="Timeline (March 11 - 13)", rangeslider=dict(visible=True)),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
                 legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center")
@@ -122,9 +162,10 @@ if dev_upload and temp_upload:
             # --- RAW DATASET AT BOTTOM ---
             st.divider()
             st.subheader("📄 Original Synced Dataset")
+            st.write("This table shows the 1-second device data synchronized with the 2-minute chamber readings.")
             st.dataframe(df_full, use_container_width=True, height=400)
             
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Synchronization Error: {e}")
 else:
-    st.info("Upload CSV files to begin analysis.")
+    st.info("Upload CSV files to begin time-synced analysis.")
