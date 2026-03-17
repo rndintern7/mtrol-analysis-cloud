@@ -116,11 +116,10 @@ if dev_upload and temp_upload:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
             # --- LAG PREVENTION: DECIMATION ---
-            # If dataset > 50k points, we plot every 2nd point for 2x performance
             step = 1 if len(df_full) < 50000 else 2
             df_plot = df_full.iloc[::step]
 
-            # --- PLOTTING (UNIFIED BOX) ---
+            # --- PLOTTING (POINT CURSOR) ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
             # Param markers (1s)
@@ -128,40 +127,29 @@ if dev_upload and temp_upload:
                 x=df_plot['Full_Time'], y=df_plot[selected], mode='markers', 
                 marker=dict(size=3, color="#00CCFF", opacity=0.4),
                 name=f"{selected}",
-                hovertemplate="%{y:.4f}<extra></extra>"
+                hovertemplate="Time: %{x}<br>Value: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Invisible layer for Temp in the same hover box
-            df_hover_temp = df_full.ffill()
-            fig.add_trace(go.Scattergl(
-                x=df_plot['Full_Time'], y=df_hover_temp.loc[df_plot.index, 'Temp'], mode='markers', 
-                marker=dict(size=0, opacity=0), 
-                name="Chamber Temp",
-                hovertemplate="%{y:.2f}°C<extra></extra>",
-                showlegend=False
-            ), secondary_y=True)
-
-            # Visible Yellow Circles for Temp (Original points)
+            # Actual Temp Readings (Yellow Circles)
             temp_points = df_full.dropna(subset=['Temp'])
             fig.add_trace(go.Scattergl(
                 x=temp_points['Full_Time'], y=temp_points['Temp'], mode='markers',
                 marker=dict(size=6, color="#FFD700", symbol='circle'),
-                name="Actual Temp Readings",
-                hoverinfo='skip'
+                name="Temp",
+                hovertemplate="Time: %{x}<br>Temp: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
             fig.update_layout(
                 template="plotly_dark", height=650,
                 dragmode=False, 
-                hovermode="x unified",
-                # Performance tweaks
-                hoverdistance=20,
-                spikedistance=20,
+                # --- MODIFIED: POINT-SPECIFIC CURSOR ---
+                hovermode="closest", 
+                hoverdistance=50, # Sensitivity of "catching" a point
                 xaxis=dict(
                     title="<b>Time Stamp</b>",
                     rangeslider=dict(visible=True, thickness=0.06),
                     fixedrange=False,
-                    showspikes=True, spikemode="across", spikesnap="cursor", spikedash="dot", spikethickness=1
+                    showspikes=False # Removed spikes for clean point cursor
                 ),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=True),
