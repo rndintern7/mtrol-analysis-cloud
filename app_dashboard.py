@@ -12,7 +12,6 @@ if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
 
 # --- CONFIGURATION: RANGES & REFERENCE STATS ---
-# Added your specific Max/Min values for Mtrol 3
 MT3_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 200.0, "max": 303.5447, "min": 0.0},
     "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 22.0132, "min": 0.0},
@@ -20,7 +19,6 @@ MT3_CONFIG = {
     "p2": {"unit": "bar", "range": [0, 12], "ref": 17.0, "max": 10.0592, "min": 0.0}
 }
 
-# Added your specific Max/Min values for Mtrol 4
 MT4_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 500.0, "max": 275.1067, "min": 0.0},
     "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 19.5011, "min": 0.0},
@@ -75,11 +73,10 @@ if dev_upload and temp_upload:
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
             std = lookup[key]
 
-            # Use your provided Reference Stats for the top row
+            # Metric Values
             p_min_ref, p_max_ref = std["min"], std["max"]
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
-            # PPM Logic
             if key == "flow":
                 ppm_val = "—"
             else:
@@ -88,13 +85,13 @@ if dev_upload and temp_upload:
                 ppm_val = f"{calc_ppm:.2f}"
 
             # --- HORIZONTAL METRICS AT TOP ---
-            st.markdown(f"### {selected} Reference Summary")
+            st.markdown(f"### {selected} Summary")
             col1, col2, col3, col4, col5 = st.columns(5)
             
-            col1.metric(f"Ref Min {selected}", f"{p_min_ref:.4f}")
-            col2.metric(f"Ref Max {selected}", f"{p_max_ref:.4f}")
-            col3.metric("Observed Min Temp", f"{t_min_obs:.1f} °C")
-            col4.metric("Observed Max Temp", f"{t_max_obs:.1f} °C")
+            col1.metric(f"Min {selected}", f"{p_min_ref:.4f}")
+            col2.metric(f"Max {selected}", f"{p_max_ref:.4f}")
+            col3.metric("Min Temp", f"{t_min_obs:.1f} °C")
+            col4.metric("Max Temp", f"{t_max_obs:.1f} °C")
             col5.metric(f"{selected} PPM", ppm_val)
 
             # --- PLOTTING ---
