@@ -6,10 +6,9 @@ from plotly.subplots import make_subplots
 # 1. Page Config
 st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 
-# --- CUSTOM CSS FOR MOUSE CURSOR & BOXES ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
-    /* Force standard arrow pointer cursor on plot and all sub-elements */
     .js-plotly-plot .plotly .cursor-crosshair,
     .js-plotly-plot .plotly .cursor-pointer,
     .js-plotly-plot .plotly .nsewdrag,
@@ -18,7 +17,6 @@ st.markdown("""
         cursor: default !important;
     }
 
-    /* Metric Box Styling */
     .metric-container {
         text-align: center;
         padding: 15px 10px;
@@ -56,7 +54,6 @@ MT4_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [0, 300], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
     "opening": {"unit": "%", "range": [15, 25], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "231.453"},
     "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
-    # --- CHANGED: Range for MT4 P2 set to 10.01 - 11.00 ---
     "p2": {"unit": "bar", "range": [10.01, 11.00], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
 
@@ -85,7 +82,6 @@ def load_and_sync(dev_file, temp_file):
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
 
-# --- UI ---
 st.title("Mtrol Precision Analytics")
 
 st.sidebar.header("📁 Step 1: Data Upload")
@@ -102,11 +98,9 @@ if dev_upload and temp_upload:
         
         if options:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
-            # Match the selected option to the config key
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
             std = lookup[key]
 
-            # --- METRICS ROW ---
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             metrics_data = [(f"Min {selected}", f"{std['min']:.4f}"), (f"Max {selected}", f"{std['max']:.4f}"),
@@ -118,14 +112,11 @@ if dev_upload and temp_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- LAG PREVENTION: DECIMATION ---
             step = 1 if len(df_full) < 50000 else 2
             df_plot = df_full.iloc[::step]
 
-            # --- PLOTTING (POINT CURSOR) ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Param markers (1s)
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot[selected], mode='markers', 
                 marker=dict(size=3, color="#00CCFF", opacity=0.4),
@@ -133,7 +124,6 @@ if dev_upload and temp_upload:
                 hovertemplate="Time: %{x}<br>Value: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Actual Temp Readings (Yellow Circles)
             temp_points = df_full.dropna(subset=['Temp'])
             fig.add_trace(go.Scattergl(
                 x=temp_points['Full_Time'], y=temp_points['Temp'], mode='markers',
@@ -144,25 +134,41 @@ if dev_upload and temp_upload:
 
             fig.update_layout(
                 template="plotly_dark", height=650,
-                dragmode=False, 
+                # --- MODIFIED: ENABLE PANNING ---
+                dragmode="pan", 
                 hovermode="closest", 
                 hoverdistance=50,
                 xaxis=dict(
                     title="<b>Time Stamp</b>",
                     rangeslider=dict(visible=True, thickness=0.06),
-                    fixedrange=False,
-                    showspikes=False
+                    fixedrange=False
                 ),
-                yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
-                yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=True),
+                # --- MODIFIED: Y-AXIS NOW UNLOCKED ---
+                yaxis=dict(
+                    title=f"<b>{selected}</b>", 
+                    range=std["range"], 
+                    color="#00CCFF", 
+                    fixedrange=False # Set to False to allow vertical "sliding"
+                ),
+                yaxis2=dict(
+                    title="<b>Temp (°C)</b>", 
+                    range=TEMP_WINDOW_ZOOMED, 
+                    side='right', 
+                    color="#FFD700", 
+                    fixedrange=False # Set to False to allow vertical "sliding"
+                ),
                 margin=dict(t=30, b=10),
                 legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center"),
                 hoverlabel=dict(bgcolor="#1e1e1e", font_size=13, font_family="Arial")
             )
             
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            # --- MODIFIED: ENABLE SCROLL ZOOM ---
+            st.plotly_chart(fig, use_container_width=True, config={
+                'displayModeBar': True,
+                'scrollZoom': True,  # Allows you to "slide" and zoom with mouse wheel
+                'modeBarButtonsToRemove': ['select2d', 'lasso2d']
+            })
 
-            # --- TABLE ---
             st.divider()
             st.subheader("📄 Original Synced Dataset")
             st.dataframe(df_full.fillna("—"), use_container_width=True, height=400)
