@@ -13,17 +13,17 @@ if os.path.exists("logo.png"):
 
 # --- CONFIGURATION: RANGES & TARGETS ---
 MT3_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "dtick": 20, "ref": 200.0, "target_ppm": "N/A"},
-    "opening": {"unit": "%", "range": [-20, 70], "dtick": 10, "ref": 100.0, "target_ppm": 2449.99},
-    "p1": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0, "target_ppm": 21455.76},
-    "p2": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0, "target_ppm": 20355.54}
+    "flow": {"unit": "Kg/Hr", "range": [200, 320], "dtick": 20, "ref": 200.0},
+    "opening": {"unit": "%", "range": [-20, 70], "dtick": 10, "ref": 100.0},
+    "p1": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0},
+    "p2": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0}
 }
 
 MT4_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [200, 320], "dtick": 20, "ref": 500.0, "target_ppm": "N/A"},
-    "opening": {"unit": "%", "range": [-20, 70], "dtick": 10, "ref": 100.0, "target_ppm": 2170.41},
-    "p1": {"unit": "bar", "range": [4, 6], "dtick": 0.5, "ref": 17.0, "target_ppm": 129.91},
-    "p2": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0, "target_ppm": 310.21}
+    "flow": {"unit": "Kg/Hr", "range": [200, 320], "dtick": 20, "ref": 500.0},
+    "opening": {"unit": "%", "range": [-20, 70], "dtick": 10, "ref": 100.0},
+    "p1": {"unit": "bar", "range": [4, 6], "dtick": 0.5, "ref": 17.0},
+    "p2": {"unit": "bar", "range": [0, 12], "dtick": 2, "ref": 17.0}
 }
 
 TEMP_WINDOW = [-20, 70]
@@ -33,11 +33,13 @@ END_TIME = "2026-03-13 11:30:00"
 
 @st.cache_data
 def load_and_sync(dev_file, temp_file):
+    # Load Chamber Temp
     df_t = pd.read_csv(temp_file).dropna(how='all')
     df_t.columns = ['Timestamp', 'Temp']
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
+    # Load Device Data
     df_d = pd.read_csv(dev_file)
     time_col = next((c for c in df_d.columns if "time" in c.lower()), "Time Stamp")
     df_d[time_col] = pd.to_datetime(df_d[time_col], errors='coerce')
@@ -77,21 +79,23 @@ if dev_upload and temp_upload:
             p_min, p_max = df_full[selected].min(), df_full[selected].max()
             t_min, t_max = df_full['Temp'].min(), df_full['Temp'].max()
             drift = p_max - p_min
-            calc_ppm = (drift * 1000000) / (TEMP_DELTA_FIXED * std["ref"])
+            
+            # Logic for PPM Display
+            if key == "flow":
+                ppm_display = "—"
+            else:
+                calc_ppm = (drift * 1000000) / (TEMP_DELTA_FIXED * std["ref"])
+                ppm_display = f"{calc_ppm:.2f}"
 
             # --- HORIZONTAL METRICS AT TOP ---
-            st.markdown("### Analysis Summary")
-            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            st.markdown(f"### {selected} Analysis Summary")
+            col1, col2, col3, col4, col5 = st.columns(5)
             
-            # Parameter Stats
             col1.metric(f"Min {selected}", f"{p_min:.3f}")
             col2.metric(f"Max {selected}", f"{p_max:.3f}")
-            col3.metric("Calculated PPM", f"{calc_ppm:.2f}")
-            
-            # Temp Stats
-            col4.metric("Min Temp", f"{t_min:.1f} °C")
-            col5.metric("Max Temp", f"{t_max:.1f} °C")
-            col6.metric("Target PPM", f"{std['target_ppm']}")
+            col3.metric("Min Temp", f"{t_min:.1f} °C")
+            col4.metric("Max Temp", f"{t_max:.1f} °C")
+            col5.metric(f"{selected} PPM", ppm_display)
 
             # --- PLOTTING ---
             display_df = df_full.iloc[::2] if len(df_full) > 20000 else df_full
