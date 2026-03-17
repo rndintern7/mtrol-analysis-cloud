@@ -69,7 +69,7 @@ def load_and_sync(dev_file, temp_file):
     
     df_d = df_d.groupby(time_col).mean().sort_index()
     
-    # Sync
+    # Sync (Join 1s and 2min data)
     combined = pd.concat([df_d, df_t], axis=1)
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
@@ -91,21 +91,19 @@ if dev_upload and temp_upload:
         
         if options:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
-            key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
-            std = lookup[key]
-
-            # Stats (using your provided Ref values)
-            t_min_obs = df_full['Temp'].min()
-            t_max_obs = df_full['Temp'].max()
+            std = lookup["p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"]
 
             # --- HORIZONTAL METRICS ---
             st.markdown(f"### {selected} Summary")
             cols = st.columns(5)
+            t_min_obs = df_full['Temp'].min()
+            t_max_obs = df_full['Temp'].max()
+            
             metrics = [
                 (f"Min {selected}", f"{std['min']:.4f}"),
                 (f"Max {selected}", f"{std['max']:.4f}"),
-                ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "N/A"),
-                ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "N/A"),
+                ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
+                ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
                 (f"{selected} PPM", std["ppm"])
             ]
             for i, (label, val) in enumerate(metrics):
@@ -115,37 +113,28 @@ if dev_upload and temp_upload:
             # --- PLOTTING ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Param: 1s points
-            fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full[selected], 
-                mode='markers', marker=dict(size=2.5, color="#00CCFF", opacity=0.4),
-                name=f"{selected} (1s)"
-            ), secondary_y=False)
+            # Param markers (1s)
+            fig.add_trace(go.Scattergl(x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
+                                       marker=dict(size=2.5, color="#00CCFF", opacity=0.4), name=f"{selected} (1s)"), secondary_y=False)
 
-            # Temp: 2-min points ONLY (drops the NaNs for the plot)
+            # Temp markers (2min) - No line
             temp_plot_df = df_full.dropna(subset=['Temp'])
-            fig.add_trace(go.Scattergl(
-                x=temp_plot_df['Full_Time'], y=temp_plot_df['Temp'], 
-                mode='markers', marker=dict(size=6, color="#FFD700", symbol='diamond'),
-                name="Chamber Temp (2-min Checkpoints)"
-            ), secondary_y=True)
+            fig.add_trace(go.Scattergl(x=temp_plot_df['Full_Time'], y=temp_plot_df['Temp'], mode='markers', 
+                                       marker=dict(size=6, color="#FFD700", symbol='diamond'), name="Temp (2-min)"), secondary_y=True)
 
-            fig.update_layout(
-                template="plotly_dark", height=600, hovermode="x unified",
-                xaxis=dict(title="Timeline", rangeslider=dict(visible=True)),
-                yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
-                yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
-                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center")
-            )
+            fig.update_layout(template="plotly_dark", height=600, hovermode="x unified",
+                              xaxis=dict(title="Timeline", rangeslider=dict(visible=True)),
+                              yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
+                              yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
+                              legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"))
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- RESOLVING NONE VALUES FOR TABLE VIEW ---
+            # --- CLEANED DATASET TABLE ---
             st.divider()
             st.subheader("📄 Original Synced Dataset")
             
-            # We create a display version of the dataframe where NaNs are filled
-            # so the user sees continuous data, but the graph stays 2-min markers.
-            df_display = df_full.ffill().dropna(subset=[selected])
+            # Convert all NaN to dash for display purposes
+            df_display = df_full.fillna("—")
             
             st.dataframe(df_display, use_container_width=True, height=400)
             
