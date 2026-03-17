@@ -50,13 +50,11 @@ def load_and_sync(dev_file, temp_file):
     df_d = df_d.groupby(time_col).mean().sort_index()
     combined = pd.concat([df_d, df_t], axis=1)
     combined['Temp'] = combined['Temp'].interpolate(method='time')
-    
-    # Filter Window
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
 
 # --- UI ---
-st.title("Mtrol Precision Analytics - Point Cloud View")
+st.title("Mtrol Precision Analytics - Cloud View")
 
 st.sidebar.header("📁 Step 1: Data Upload")
 dev_upload = st.sidebar.file_uploader("Upload Device CSV", type=['csv'])
@@ -65,14 +63,9 @@ temp_upload = st.sidebar.file_uploader("Upload Chamber CSV", type=['csv'])
 if dev_upload and temp_upload:
     try:
         df_full = load_and_sync(dev_upload, temp_upload)
-        
-        # Determine Mode
         is_mt4 = "MT4" in dev_upload.name.upper()
         lookup = MT4_CONFIG if is_mt4 else MT3_CONFIG
         
-        # Parameter Selection
-        st.sidebar.divider()
-        st.sidebar.header("🎯 Step 2: Parameters")
         options = [c for c in df_full.columns if any(t in c.lower() for t in ["flow", "opening", "p1", "p2"])]
         
         if options:
@@ -86,20 +79,30 @@ if dev_upload and temp_upload:
             drift = p_max - p_min
             calc_ppm = (drift * 1000000) / (TEMP_DELTA_FIXED * std["ref"])
 
-            # --- PLOTTING (POINTS ONLY) ---
-            # For better performance on 1s markers, we cap the display points but keep calculations on full data
-            display_df = df_full.iloc[::2] if len(df_full) > 20000 else df_full
+            # --- HORIZONTAL METRICS AT TOP ---
+            st.markdown("### Analysis Summary")
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            
+            # Parameter Stats
+            col1.metric(f"Min {selected}", f"{p_min:.3f}")
+            col2.metric(f"Max {selected}", f"{p_max:.3f}")
+            col3.metric("Calculated PPM", f"{calc_ppm:.2f}")
+            
+            # Temp Stats
+            col4.metric("Min Temp", f"{t_min:.1f} °C")
+            col5.metric("Max Temp", f"{t_max:.1f} °C")
+            col6.metric("Target PPM", f"{std['target_ppm']}")
 
+            # --- PLOTTING ---
+            display_df = df_full.iloc[::2] if len(df_full) > 20000 else df_full
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Scatter Plot: Markers ONLY
             fig.add_trace(go.Scattergl(
                 x=display_df['Full_Time'], y=display_df[selected], 
                 mode='markers', marker=dict(size=3, color="#00CCFF", opacity=0.6),
-                name=f"{selected} (Raw Points)"
+                name=f"{selected}"
             ), secondary_y=False)
 
-            # Temp Trace: Dotted Line (standard for reference)
             fig.add_trace(go.Scattergl(
                 x=display_df['Full_Time'], y=display_df['Temp'], 
                 mode='lines', line=dict(color="#FFD700", dash='dot', width=2),
@@ -108,28 +111,19 @@ if dev_upload and temp_upload:
 
             fig.update_layout(
                 template="plotly_dark", height=600, hovermode="x unified",
-                xaxis=dict(title="Timeline (Mar 11-13)", rangeslider=dict(visible=True)),
+                xaxis=dict(title="Timeline", rangeslider=dict(visible=True)),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
                 legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center")
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- STATS TABLE ---
-            st.subheader("📋 Stability & Range Analysis")
-            summary_table = {
-                "Metric": ["Minimum Value", "Maximum Value", "Calculated PPM", "Reference Goal"],
-                f"{selected}": [f"{p_min:.4f}", f"{p_max:.4f}", f"**{calc_ppm:.2f}**", f"{std['target_ppm']}"],
-                "Chamber Temperature": [f"{t_min:.2f} °C", f"{t_max:.2f} °C", "N/A", "ΔT: 89.85"]
-            }
-            st.table(pd.DataFrame(summary_table))
-
             # --- RAW DATASET AT BOTTOM ---
             st.divider()
-            st.subheader("📄 Original Synced Dataset (Bottom)")
-            st.dataframe(df_full, height=300)
+            st.subheader("📄 Original Synced Dataset")
+            st.dataframe(df_full, use_container_width=True, height=400)
             
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("Upload CSV files to view the point-cloud analysis and raw data.")
+    st.info("Upload CSV files to begin analysis.")
