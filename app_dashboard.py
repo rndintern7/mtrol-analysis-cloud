@@ -30,7 +30,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURATION: RANGES, REFERENCE STATS & TARGET PPM ---
+# --- CONFIGURATION ---
 MT3_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [200, 320], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
     "opening": {"unit": "%", "range": [-20, 70], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "2449.99"},
@@ -51,13 +51,13 @@ END_TIME = "2026-03-13 11:30:00"
 
 @st.cache_data
 def load_and_sync(dev_file, temp_file):
-    # Load Chamber Temp (Raw 2-min points)
+    # Load Chamber Temp
     df_t = pd.read_csv(temp_file).dropna(how='all')
     df_t.columns = ['Timestamp', 'Temp']
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
-    # Load Device Data (1-sec points)
+    # Load Device Data
     df_d = pd.read_csv(dev_file)
     time_col = next((c for c in df_d.columns if "time" in c.lower()), "Time Stamp")
     df_d[time_col] = pd.to_datetime(df_d[time_col], errors='coerce')
@@ -68,6 +68,8 @@ def load_and_sync(dev_file, temp_file):
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
     df_d = df_d.groupby(time_col).mean().sort_index()
+    
+    # Sync
     combined = pd.concat([df_d, df_t], axis=1)
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
@@ -92,21 +94,19 @@ if dev_upload and temp_upload:
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
             std = lookup[key]
 
-            # Metric Values from provided references
-            p_min_ref, p_max_ref = std["min"], std["max"]
+            # Stats (using your provided Ref values)
             t_min_obs = df_full['Temp'].min()
             t_max_obs = df_full['Temp'].max()
-            ppm_val = std["ppm"]
 
-            # --- HORIZONTAL CUSTOM METRICS ---
+            # --- HORIZONTAL METRICS ---
             st.markdown(f"### {selected} Summary")
             cols = st.columns(5)
             metrics = [
-                (f"Min {selected}", f"{p_min_ref:.4f}"),
-                (f"Max {selected}", f"{p_max_ref:.4f}"),
+                (f"Min {selected}", f"{std['min']:.4f}"),
+                (f"Max {selected}", f"{std['max']:.4f}"),
                 ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "N/A"),
                 ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "N/A"),
-                (f"{selected} PPM", ppm_val)
+                (f"{selected} PPM", std["ppm"])
             ]
             for i, (label, val) in enumerate(metrics):
                 with cols[i]:
@@ -115,19 +115,19 @@ if dev_upload and temp_upload:
             # --- PLOTTING ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Primary: Parameter (1s markers)
+            # Param: 1s points
             fig.add_trace(go.Scattergl(
                 x=df_full['Full_Time'], y=df_full[selected], 
                 mode='markers', marker=dict(size=2.5, color="#00CCFF", opacity=0.4),
                 name=f"{selected} (1s)"
             ), secondary_y=False)
 
-            # Secondary: Temp (Original 2-min points ONLY)
-            temp_df = df_full.dropna(subset=['Temp'])
+            # Temp: 2-min points ONLY (drops the NaNs for the plot)
+            temp_plot_df = df_full.dropna(subset=['Temp'])
             fig.add_trace(go.Scattergl(
-                x=temp_df['Full_Time'], y=temp_df['Temp'], 
+                x=temp_plot_df['Full_Time'], y=temp_plot_df['Temp'], 
                 mode='markers', marker=dict(size=6, color="#FFD700", symbol='diamond'),
-                name="Chamber Temp (2-min)"
+                name="Chamber Temp (2-min Checkpoints)"
             ), secondary_y=True)
 
             fig.update_layout(
@@ -139,10 +139,15 @@ if dev_upload and temp_upload:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # --- RAW DATASET ---
+            # --- RESOLVING NONE VALUES FOR TABLE VIEW ---
             st.divider()
             st.subheader("📄 Original Synced Dataset")
-            st.dataframe(df_full, use_container_width=True, height=400)
+            
+            # We create a display version of the dataframe where NaNs are filled
+            # so the user sees continuous data, but the graph stays 2-min markers.
+            df_display = df_full.ffill().dropna(subset=[selected])
+            
+            st.dataframe(df_display, use_container_width=True, height=400)
             
     except Exception as e:
         st.error(f"Error: {e}")
