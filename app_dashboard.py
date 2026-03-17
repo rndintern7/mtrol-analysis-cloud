@@ -56,6 +56,7 @@ MT4_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [0, 300], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
     "opening": {"unit": "%", "range": [15, 25], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "231.453"},
     "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
+    # --- CHANGED: Range for MT4 P2 set to 10.01 - 11.00 ---
     "p2": {"unit": "bar", "range": [10.01, 11.00], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
 
@@ -101,7 +102,9 @@ if dev_upload and temp_upload:
         
         if options:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
-            std = lookup["p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"]
+            # Match the selected option to the config key
+            key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
+            std = lookup[key]
 
             # --- METRICS ROW ---
             cols = st.columns(5)
@@ -142,14 +145,13 @@ if dev_upload and temp_upload:
             fig.update_layout(
                 template="plotly_dark", height=650,
                 dragmode=False, 
-                # --- MODIFIED: POINT-SPECIFIC CURSOR ---
                 hovermode="closest", 
-                hoverdistance=50, # Sensitivity of "catching" a point
+                hoverdistance=50,
                 xaxis=dict(
                     title="<b>Time Stamp</b>",
                     rangeslider=dict(visible=True, thickness=0.06),
                     fixedrange=False,
-                    showspikes=False # Removed spikes for clean point cursor
+                    showspikes=False
                 ),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=True),
