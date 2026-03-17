@@ -7,9 +7,18 @@ import os
 # 1. Page Config
 st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 
-# --- CUSTOM CSS FOR FIXED HEIGHT & WEIGHT ---
+# --- CUSTOM CSS FOR MOUSE CURSOR & BOXES ---
 st.markdown("""
     <style>
+    /* Force the mouse arrow cursor on the entire plot area */
+    .js-plotly-plot .plotly .cursor-crosshair {
+        cursor: default !important;
+    }
+    .plot-container {
+        cursor: default !important;
+    }
+    
+    /* Metric Box Styling */
     .metric-container {
         text-align: center;
         padding: 15px 10px;
@@ -26,7 +35,6 @@ st.markdown("""
         font-weight: 700;
         color: #FFD700;
         margin-bottom: 8px;
-        line-height: 1.2;
     }
     .metric-value {
         font-size: 16px !important;
@@ -97,73 +105,52 @@ if dev_upload and temp_upload:
 
             # --- METRICS ROW ---
             cols = st.columns(5)
-            t_min_obs = df_full['Temp'].min()
-            t_max_obs = df_full['Temp'].max()
-            
-            metrics_data = [
-                (f"Min {selected}", f"{std['min']:.4f}"),
-                (f"Max {selected}", f"{std['max']:.4f}"),
-                ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
-                ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
-                (f"{selected} PPM", std["ppm"])
-            ]
+            t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
+            metrics_data = [(f"Min {selected}", f"{std['min']:.4f}"), (f"Max {selected}", f"{std['max']:.4f}"),
+                            ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
+                            ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
+                            (f"{selected} PPM", std["ppm"])]
 
             for i, (label, val) in enumerate(metrics_data):
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- PLOTTING WITH ENHANCED CURSOR ---
+            # --- PLOTTING ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Param markers (1s) - Added customdata for precise hover
             fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], 
-                y=df_full[selected], 
-                mode='markers', 
-                marker=dict(size=3, color="#00CCFF", opacity=0.5),
+                x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
+                marker=dict(size=4, color="#00CCFF", opacity=0.6),
                 name=f"{selected}",
-                hovertemplate="Value: %{y:.4f}<extra></extra>"
+                hovertemplate="Time: %{x|%H:%M:%S}<br>Value: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Temp markers (2min)
             temp_plot_df = df_full.dropna(subset=['Temp'])
             fig.add_trace(go.Scattergl(
-                x=temp_plot_df['Full_Time'], 
-                y=temp_plot_df['Temp'], 
-                mode='markers', 
-                marker=dict(size=8, color="#FFD700", symbol='diamond', line=dict(width=1, color="white")),
-                name="Chamber Temp",
+                x=temp_plot_df['Full_Time'], y=temp_plot_df['Temp'], mode='markers', 
+                marker=dict(size=10, color="#FFD700", symbol='diamond'),
+                name="Temp",
                 hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", 
-                height=600, 
-                # --- PROPER CURSOR CONFIG ---
-                hovermode="x unified", # Vertical line cursor
-                hoverlabel=dict(bgcolor="#222", font_size=14, font_family="Arial"),
-                xaxis=dict(
-                    title="Timeline", 
-                    rangeslider=dict(visible=True),
-                    showspikes=True, # Dash lines following cursor
-                    spikemode="across",
-                    spikethickness=1,
-                    spikedash="dash",
-                    spikecolor="#999"
-                ),
+                template="plotly_dark", height=600,
+                dragmode=False, # Disables scaling/zoom box
+                hovermode="x",  # Tooltip follows mouse
+                xaxis=dict(title="Timeline", fixedrange=True), # Disables panning
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW, side='right', color="#FFD700", fixedrange=True),
-                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
-                margin=dict(t=30)
+                margin=dict(t=20),
+                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center")
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            # config hides the toolbar so the mouse stays clean
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'staticPlot': False})
 
             # --- TABLE ---
             st.divider()
             st.subheader("📄 Original Synced Dataset")
-            df_display = df_full.fillna("—")
-            st.dataframe(df_display, use_container_width=True, height=400)
+            st.dataframe(df_full.fillna("—"), use_container_width=True, height=400)
             
     except Exception as e:
         st.error(f"Error: {e}")
