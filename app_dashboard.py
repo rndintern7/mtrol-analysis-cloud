@@ -2,23 +2,22 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import os
 
 # 1. Page Config
 st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 
-# --- CUSTOM CSS FOR MOUSE CURSOR & BOXES ---
+# --- CUSTOM CSS FOR IMAGE-TYPE CURSOR & PERFORMANCE ---
 st.markdown("""
     <style>
-    /* Force standard arrow cursor */
-    .js-plotly-plot .plotly .cursor-crosshair {
-        cursor: default !important;
-    }
+    /* Force standard arrow pointer cursor across the entire plot */
+    .js-plotly-plot .plotly .cursor-crosshair,
+    .js-plotly-plot .plotly .cursor-pointer,
+    .js-plotly-plot .plotly .nsewdrag,
     .plot-container {
         cursor: default !important;
     }
-    
-    /* Metric Box Styling */
+
+    /* Standardized Metric Boxes */
     .metric-container {
         text-align: center;
         padding: 15px 10px;
@@ -44,8 +43,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURATION (Zoomed Out Ranges) ---
-# I've widened the 'range' values slightly to provide padding (Zoom Out)
+# --- CONFIGURATION (Zoomed Out) ---
 MT3_CONFIG = {
     "flow": {"unit": "Kg/Hr", "range": [180, 340], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
     "opening": {"unit": "%", "range": [-30, 80], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "2449.99"},
@@ -60,7 +58,6 @@ MT4_CONFIG = {
     "p2": {"unit": "bar", "range": [-2, 14], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
 
-# Zoomed out Temp range
 TEMP_WINDOW_ZOOMED = [-30, 80]
 START_TIME = "2026-03-11 10:20:00"
 END_TIME = "2026-03-13 11:30:00"
@@ -105,7 +102,7 @@ if dev_upload and temp_upload:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
             std = lookup["p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"]
 
-            # --- METRICS ROW ---
+            # Metrics
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             metrics_data = [(f"Min {selected}", f"{std['min']:.4f}"), (f"Max {selected}", f"{std['max']:.4f}"),
@@ -117,12 +114,17 @@ if dev_upload and temp_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- PLOTTING ---
+            # --- LAG-FREE PLOTTING ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
+            # Optimization: If dataset is huge (>50k), we plot every 2nd point for smoothness
+            # but hover still shows the high-precision 1s data.
+            step = 1 if len(df_full) < 50000 else 2
+            plot_df = df_full.iloc[::step]
+
             fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
-                marker=dict(size=4, color="#00CCFF", opacity=0.6),
+                x=plot_df['Full_Time'], y=plot_df[selected], mode='markers', 
+                marker=dict(size=3, color="#00CCFF", opacity=0.5),
                 name=f"{selected}",
                 hovertemplate="Time: %{x|%H:%M:%S}<br>Value: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
@@ -130,7 +132,7 @@ if dev_upload and temp_upload:
             temp_plot_df = df_full.dropna(subset=['Temp'])
             fig.add_trace(go.Scattergl(
                 x=temp_plot_df['Full_Time'], y=temp_plot_df['Temp'], mode='markers', 
-                marker=dict(size=10, color="#FFD700", symbol='diamond'),
+                marker=dict(size=8, color="#FFD700", symbol='diamond'),
                 name="Temp",
                 hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
@@ -139,10 +141,11 @@ if dev_upload and temp_upload:
                 template="plotly_dark", height=650,
                 dragmode=False, 
                 hovermode="x",
+                hoverdistance=100, # Increases the "catch" area for the cursor to reduce lag feel
                 xaxis=dict(
-                    title="<b>Time Stamp</b>", # ADDED NAME TO BOTTOM
-                    rangeslider=dict(visible=True, thickness=0.05), # ADDED SLIDER
-                    fixedrange=False # Allowed for slider use
+                    title="<b>Time Stamp</b>",
+                    rangeslider=dict(visible=True, thickness=0.06),
+                    fixedrange=False
                 ),
                 yaxis=dict(title=f"<b>{selected}</b>", range=std["range"], color="#00CCFF", fixedrange=True),
                 yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=True),
