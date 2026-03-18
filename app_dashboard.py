@@ -89,27 +89,26 @@ temp_upload = st.sidebar.file_uploader("Upload Chamber CSV", type=['csv'])
 
 if dev_upload and temp_upload:
     try:
-        # --- NEW ROBUST DETECTION LOGIC ---
-        filename = dev_upload.name.upper()
+        # 1. Initialize logic before using it
+        filename_upper = dev_upload.name.upper()
         
-        # 1. Check filename
-        auto_is_mt4 = "MT4" in filename
-        
-        # 2. Allow manual override if detection is wrong
-        device_mode = st.sidebar.radio("Confirm Device Type:", ["Auto-Detect", "Force MT3", "Force MT4"])
+        # 2. Sidebar selection (Manual Override)
+        device_mode = st.sidebar.radio("Select Device Type:", ["Auto-Detect", "Force MT3", "Force MT4"])
         
         if device_mode == "Force MT4":
             is_mt4 = True
         elif device_mode == "Force MT3":
             is_mt4 = False
         else:
-            is_is_mt4 = auto_is_mt4 # Use result of filename check
+            # Auto-detect logic
+            is_mt4 = "MT4" in filename_upper
 
+        # 3. Assign config based on determined type
         current_config = MT4_CONFIG if is_mt4 else MT3_CONFIG
         
-        # UI indicator
-        status_color = "green" if is_mt4 else "blue"
-        st.sidebar.markdown(f"<div style='color:{status_color}; font-weight:bold;'>Active Config: {'MT4' if is_mt4 else 'MT3'}</div>", unsafe_allow_html=True)
+        # Display status
+        status_label = "MT4" if is_mt4 else "MT3"
+        st.sidebar.info(f"Active Configuration: **{status_label}**")
 
         df_full = load_and_sync(dev_upload, temp_upload)
         options = [c for c in df_full.columns if any(t in c.lower() for t in ["flow", "opening", "p1", "p2"])]
@@ -117,6 +116,8 @@ if dev_upload and temp_upload:
         if options:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
             sel_lower = selected.lower()
+            
+            # Map column to configuration key
             if "p1" in sel_lower: key = "p1"
             elif "p2" in sel_lower: key = "p2"
             elif "opening" in sel_lower: key = "opening"
@@ -124,7 +125,7 @@ if dev_upload and temp_upload:
             
             active_settings = current_config[key]
 
-            # --- METRICS ---
+            # --- METRICS ROW ---
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
