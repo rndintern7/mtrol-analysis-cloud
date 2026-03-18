@@ -16,7 +16,6 @@ st.markdown("""
     .plot-container {
         cursor: default !important;
     }
-
     .metric-container {
         text-align: center;
         padding: 15px 10px;
@@ -90,30 +89,42 @@ temp_upload = st.sidebar.file_uploader("Upload Chamber CSV", type=['csv'])
 
 if dev_upload and temp_upload:
     try:
-        df_full = load_and_sync(dev_upload, temp_upload)
+        # --- NEW ROBUST DETECTION LOGIC ---
+        filename = dev_upload.name.upper()
         
-        # --- IMPROVED LOOKUP LOGIC ---
-        is_mt4 = "MT4" in dev_upload.name.upper()
+        # 1. Check filename
+        auto_is_mt4 = "MT4" in filename
+        
+        # 2. Allow manual override if detection is wrong
+        device_mode = st.sidebar.radio("Confirm Device Type:", ["Auto-Detect", "Force MT3", "Force MT4"])
+        
+        if device_mode == "Force MT4":
+            is_mt4 = True
+        elif device_mode == "Force MT3":
+            is_mt4 = False
+        else:
+            is_is_mt4 = auto_is_mt4 # Use result of filename check
+
         current_config = MT4_CONFIG if is_mt4 else MT3_CONFIG
         
-        st.sidebar.success(f"Detected: {'MT4' if is_mt4 else 'MT3'}")
-        
+        # UI indicator
+        status_color = "green" if is_mt4 else "blue"
+        st.sidebar.markdown(f"<div style='color:{status_color}; font-weight:bold;'>Active Config: {'MT4' if is_mt4 else 'MT3'}</div>", unsafe_allow_html=True)
+
+        df_full = load_and_sync(dev_upload, temp_upload)
         options = [c for c in df_full.columns if any(t in c.lower() for t in ["flow", "opening", "p1", "p2"])]
         
         if options:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
-            
-            # Key Mapping: Prioritize P1/P2/Opening specifically
             sel_lower = selected.lower()
             if "p1" in sel_lower: key = "p1"
             elif "p2" in sel_lower: key = "p2"
             elif "opening" in sel_lower: key = "opening"
             else: key = "flow"
             
-            # Explicitly Pull MT4 vs MT3 Settings
             active_settings = current_config[key]
 
-            # --- METRICS ROW ---
+            # --- METRICS ---
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
@@ -122,7 +133,7 @@ if dev_upload and temp_upload:
                 (f"Max {selected}", f"{active_settings['max']:.4f}"),
                 ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
                 ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
-                (f"{selected} PPM", active_settings["ppm"]) # Now pulls strictly from the assigned MT4 config
+                (f"{selected} PPM", active_settings["ppm"])
             ]
 
             for i, (label, val) in enumerate(metrics_data):
@@ -132,7 +143,6 @@ if dev_upload and temp_upload:
             # --- PLOTTING ---
             step = 1 if len(df_full) < 50000 else 2
             df_plot = df_full.iloc[::step]
-
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
             fig.add_trace(go.Scattergl(
@@ -152,38 +162,15 @@ if dev_upload and temp_upload:
 
             fig.update_layout(
                 template="plotly_dark", height=650,
-                dragmode="pan", 
-                hovermode="closest", 
-                hoverdistance=50,
-                xaxis=dict(
-                    title="<b>Time Stamp</b>",
-                    rangeslider=dict(visible=True, thickness=0.06),
-                    fixedrange=False
-                ),
-                yaxis=dict(
-                    title=f"<b>{selected}</b>", 
-                    range=active_settings["range"], 
-                    color="#00CCFF", 
-                    fixedrange=False 
-                ),
-                yaxis2=dict(
-                    title="<b>Temp (°C)</b>", 
-                    range=TEMP_WINDOW_ZOOMED, 
-                    side='right', 
-                    color="#FFD700", 
-                    fixedrange=False 
-                ),
+                dragmode="pan", hovermode="closest",
+                xaxis=dict(title="<b>Time Stamp</b>", rangeslider=dict(visible=True, thickness=0.06), fixedrange=False),
+                yaxis=dict(title=f"<b>{selected}</b>", range=active_settings["range"], color="#00CCFF", fixedrange=False),
+                yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=False),
                 margin=dict(t=30, b=10),
-                legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center"),
-                hoverlabel=dict(bgcolor="#1e1e1e", font_size=13, font_family="Arial")
+                legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center")
             )
             
-            st.plotly_chart(fig, use_container_width=True, config={
-                'displayModeBar': True,
-                'scrollZoom': True,
-                'modeBarButtonsToRemove': ['select2d', 'lasso2d']
-            })
-
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True})
             st.divider()
             st.subheader("📄 Original Synced Dataset")
             st.dataframe(df_full.fillna("—"), use_container_width=True, height=400)
