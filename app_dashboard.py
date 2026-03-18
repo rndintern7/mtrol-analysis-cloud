@@ -89,10 +89,8 @@ temp_upload = st.sidebar.file_uploader("Upload Chamber CSV", type=['csv'])
 
 if dev_upload and temp_upload:
     try:
-        # 1. Initialize logic before using it
         filename_upper = dev_upload.name.upper()
         
-        # 2. Sidebar selection (Manual Override)
         device_mode = st.sidebar.radio("Select Device Type:", ["Auto-Detect", "Force MT3", "Force MT4"])
         
         if device_mode == "Force MT4":
@@ -100,15 +98,9 @@ if dev_upload and temp_upload:
         elif device_mode == "Force MT3":
             is_mt4 = False
         else:
-            # Auto-detect logic
             is_mt4 = "MT4" in filename_upper
 
-        # 3. Assign config based on determined type
         current_config = MT4_CONFIG if is_mt4 else MT3_CONFIG
-        
-        # Display status
-        status_label = "MT4" if is_mt4 else "MT3"
-        st.sidebar.info(f"Active Configuration: **{status_label}**")
 
         df_full = load_and_sync(dev_upload, temp_upload)
         options = [c for c in df_full.columns if any(t in c.lower() for t in ["flow", "opening", "p1", "p2"])]
@@ -117,7 +109,6 @@ if dev_upload and temp_upload:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
             sel_lower = selected.lower()
             
-            # Map column to configuration key
             if "p1" in sel_lower: key = "p1"
             elif "p2" in sel_lower: key = "p2"
             elif "opening" in sel_lower: key = "opening"
