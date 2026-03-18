@@ -92,32 +92,37 @@ if dev_upload and temp_upload:
     try:
         df_full = load_and_sync(dev_upload, temp_upload)
         
-        # --- FIXED: STRICT LOOKUP LOGIC ---
+        # --- IMPROVED LOOKUP LOGIC ---
         is_mt4 = "MT4" in dev_upload.name.upper()
         current_config = MT4_CONFIG if is_mt4 else MT3_CONFIG
+        
+        st.sidebar.success(f"Detected: {'MT4' if is_mt4 else 'MT3'}")
         
         options = [c for c in df_full.columns if any(t in c.lower() for t in ["flow", "opening", "p1", "p2"])]
         
         if options:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
             
-            # Map selected column to the key in our config
-            key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
+            # Key Mapping: Prioritize P1/P2/Opening specifically
+            sel_lower = selected.lower()
+            if "p1" in sel_lower: key = "p1"
+            elif "p2" in sel_lower: key = "p2"
+            elif "opening" in sel_lower: key = "opening"
+            else: key = "flow"
             
-            # Pull specific settings for the chosen device and parameter
+            # Explicitly Pull MT4 vs MT3 Settings
             active_settings = current_config[key]
 
-            # --- METRICS ROW (PPM Fixed) ---
+            # --- METRICS ROW ---
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
-            # Using active_settings ensures we get MT4 PPM if MT4 is uploaded
             metrics_data = [
                 (f"Min {selected}", f"{active_settings['min']:.4f}"), 
                 (f"Max {selected}", f"{active_settings['max']:.4f}"),
                 ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
                 ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
-                (f"{selected} PPM", active_settings["ppm"])
+                (f"{selected} PPM", active_settings["ppm"]) # Now pulls strictly from the assigned MT4 config
             ]
 
             for i, (label, val) in enumerate(metrics_data):
