@@ -91,27 +91,40 @@ temp_upload = st.sidebar.file_uploader("Upload Chamber CSV", type=['csv'])
 if dev_upload and temp_upload:
     try:
         df_full = load_and_sync(dev_upload, temp_upload)
+        
+        # --- FIXED: STRICT LOOKUP LOGIC ---
         is_mt4 = "MT4" in dev_upload.name.upper()
-        lookup = MT4_CONFIG if is_mt4 else MT3_CONFIG
+        current_config = MT4_CONFIG if is_mt4 else MT3_CONFIG
         
         options = [c for c in df_full.columns if any(t in c.lower() for t in ["flow", "opening", "p1", "p2"])]
         
         if options:
             selected = st.sidebar.selectbox("Choose curve to plot", options)
+            
+            # Map selected column to the key in our config
             key = "p1" if "p1" in selected.lower() else "p2" if "p2" in selected.lower() else "flow" if "flow" in selected.lower() else "opening"
-            std = lookup[key]
+            
+            # Pull specific settings for the chosen device and parameter
+            active_settings = current_config[key]
 
+            # --- METRICS ROW (PPM Fixed) ---
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
-            metrics_data = [(f"Min {selected}", f"{std['min']:.4f}"), (f"Max {selected}", f"{std['max']:.4f}"),
-                            ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
-                            ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
-                            (f"{selected} PPM", std["ppm"])]
+            
+            # Using active_settings ensures we get MT4 PPM if MT4 is uploaded
+            metrics_data = [
+                (f"Min {selected}", f"{active_settings['min']:.4f}"), 
+                (f"Max {selected}", f"{active_settings['max']:.4f}"),
+                ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
+                ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
+                (f"{selected} PPM", active_settings["ppm"])
+            ]
 
             for i, (label, val) in enumerate(metrics_data):
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
+            # --- PLOTTING ---
             step = 1 if len(df_full) < 50000 else 2
             df_plot = df_full.iloc[::step]
 
@@ -134,7 +147,6 @@ if dev_upload and temp_upload:
 
             fig.update_layout(
                 template="plotly_dark", height=650,
-                # --- MODIFIED: ENABLE PANNING ---
                 dragmode="pan", 
                 hovermode="closest", 
                 hoverdistance=50,
@@ -143,29 +155,27 @@ if dev_upload and temp_upload:
                     rangeslider=dict(visible=True, thickness=0.06),
                     fixedrange=False
                 ),
-                # --- MODIFIED: Y-AXIS NOW UNLOCKED ---
                 yaxis=dict(
                     title=f"<b>{selected}</b>", 
-                    range=std["range"], 
+                    range=active_settings["range"], 
                     color="#00CCFF", 
-                    fixedrange=False # Set to False to allow vertical "sliding"
+                    fixedrange=False 
                 ),
                 yaxis2=dict(
                     title="<b>Temp (°C)</b>", 
                     range=TEMP_WINDOW_ZOOMED, 
                     side='right', 
                     color="#FFD700", 
-                    fixedrange=False # Set to False to allow vertical "sliding"
+                    fixedrange=False 
                 ),
                 margin=dict(t=30, b=10),
                 legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center"),
                 hoverlabel=dict(bgcolor="#1e1e1e", font_size=13, font_family="Arial")
             )
             
-            # --- MODIFIED: ENABLE SCROLL ZOOM ---
             st.plotly_chart(fig, use_container_width=True, config={
                 'displayModeBar': True,
-                'scrollZoom': True,  # Allows you to "slide" and zoom with mouse wheel
+                'scrollZoom': True,
                 'modeBarButtonsToRemove': ['select2d', 'lasso2d']
             })
 
