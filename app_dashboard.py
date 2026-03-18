@@ -173,7 +173,7 @@ if dev_upload and temp_upload:
             
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True})
             st.divider()
-            st.subheader("📄 Original Synced Dataset")
+            st.subheader("📄 Original Dataset")
             st.dataframe(df_full.fillna("—"), use_container_width=True, height=400)
             
     except Exception as e:
