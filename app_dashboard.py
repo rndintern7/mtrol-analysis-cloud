@@ -9,6 +9,13 @@ st.set_page_config(page_title="Mtrol Precision Analytics", layout="wide")
 # --- CUSTOM CSS ---
 st.markdown("""
     <style>
+    .js-plotly-plot .plotly .cursor-crosshair,
+    .js-plotly-plot .plotly .cursor-pointer,
+    .js-plotly-plot .plotly .nsewdrag,
+    .js-plotly-plot .plotly .drag,
+    .plot-container {
+        cursor: default !important;
+    }
     .metric-container {
         text-align: center;
         padding: 15px 10px;
@@ -21,32 +28,32 @@ st.markdown("""
         justify-content: center;
     }
     .metric-label {
-        font-size: 16px !important; 
+        font-size: 18px !important; 
         font-weight: 700;
         color: #FFD700;
         margin-bottom: 8px;
     }
     .metric-value {
-        font-size: 15px !important;
+        font-size: 16px !important;
         font-weight: 400;
         color: #ffffff;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONFIGURATION DATA ---
+# --- CONFIGURATION ---
 MT3_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [0, 340], "max": 303.5447, "min": 0.0, "ppm": "—"},
-    "opening": {"unit": "%", "range": [15, 25], "max": 22.0132, "min": 0.0, "ppm": "308.42"},
-    "p1": {"unit": "bar", "range": [4, 12], "max": 10.6029, "min": 0.0, "ppm": "19362.57"},
-    "p2": {"unit": "bar", "range": [8, 12], "max": 10.0592, "min": 0.0, "ppm": "9010.37"}
+    "flow": {"unit": "Kg/Hr", "range": [0, 340], "ref": 200.0, "max": 303.5447, "min": 0.0, "ppm": "—"},
+    "opening": {"unit": "%", "range": [15, 25], "ref": 100.0, "max": 22.0132, "min": 0.0, "ppm": "308.42"},
+    "p1": {"unit": "bar", "range": [4, 12], "ref": 17.0, "max": 10.6029, "min": 0.0, "ppm": "19362.57"},
+    "p2": {"unit": "bar", "range": [8, 12], "ref": 17.0, "max": 10.0592, "min": 0.0, "ppm": "9010.37"}
 }
 
 MT4_CONFIG = {
-    "flow": {"unit": "Kg/Hr", "range": [0, 300], "max": 275.1067, "min": 0.0, "ppm": "—"},
-    "opening": {"unit": "%", "range": [15, 25], "max": 19.5011, "min": 0.0, "ppm": "231.453"},
-    "p1": {"unit": "bar", "range": [4, 6], "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
-    "p2": {"unit": "bar", "range": [10.01, 11.00], "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
+    "flow": {"unit": "Kg/Hr", "range": [0, 300], "ref": 500.0, "max": 275.1067, "min": 0.0, "ppm": "—"},
+    "opening": {"unit": "%", "range": [15, 25], "ref": 100.0, "max": 19.5011, "min": 0.0, "ppm": "231.453"},
+    "p1": {"unit": "bar", "range": [4, 6], "ref": 17.0, "max": 5.3704, "min": 5.3062, "ppm": "129.91"},
+    "p2": {"unit": "bar", "range": [10.01, 11.00], "ref": 17.0, "max": 10.7396, "min": 10.5863, "ppm": "310.21"}
 }
 
 TEMP_WINDOW_ZOOMED = [-30, 80]
@@ -55,18 +62,15 @@ END_TIME = "2026-03-13 11:30:00"
 
 @st.cache_data
 def load_and_sync(dev_file, temp_file):
-    # Process Chamber Temperature Data
     df_t = pd.read_csv(temp_file).dropna(how='all')
     df_t.columns = ['Timestamp', 'Temp']
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
-    # Process Device Log Data
     df_d = pd.read_csv(dev_file)
-    time_col = next((c for c in df_d.columns if "time" in c.lower()), df_d.columns[0])
+    time_col = next((c for c in df_d.columns if "time" in c.lower()), "Time Stamp")
     df_d[time_col] = pd.to_datetime(df_d[time_col], errors='coerce')
     
-    # Clean numeric columns
     targets = ["P1", "P2", "Flow Rate", "% Opening"]
     for col in df_d.columns:
         if any(t.lower() in col.lower() for t in targets):
@@ -77,7 +81,6 @@ def load_and_sync(dev_file, temp_file):
     combined = combined.loc[START_TIME : END_TIME].reset_index().rename(columns={'index': 'Full_Time'})
     return combined
 
-# --- MAIN APP UI ---
 st.title("Mtrol Precision Analytics")
 
 st.sidebar.header("📁 Step 1: Data Upload")
@@ -86,20 +89,26 @@ temp_upload = st.sidebar.file_uploader("Upload Chamber CSV", type=['csv'])
 
 if dev_upload and temp_upload:
     try:
-        # Silent Detection: Determine config based on filename without displaying it
-        is_mt4 = "MT4" in dev_upload.name.upper()
+        filename_upper = dev_upload.name.upper()
+        
+        device_mode = st.sidebar.radio("Select Device Type:", ["Auto-Detect", "Force MT3", "Force MT4"])
+        
+        if device_mode == "Force MT4":
+            is_mt4 = True
+        elif device_mode == "Force MT3":
+            is_mt4 = False
+        else:
+            is_mt4 = "MT4" in filename_upper
+
         current_config = MT4_CONFIG if is_mt4 else MT3_CONFIG
 
         df_full = load_and_sync(dev_upload, temp_upload)
-        
-        # Identify available columns based on keywords
         options = [c for c in df_full.columns if any(t in c.lower() for t in ["flow", "opening", "p1", "p2"])]
         
         if options:
-            selected = st.sidebar.selectbox("Select Parameter to Analyze", options)
+            selected = st.sidebar.selectbox("Choose curve to plot", options)
             sel_lower = selected.lower()
             
-            # Map selected column to configuration key
             if "p1" in sel_lower: key = "p1"
             elif "p2" in sel_lower: key = "p2"
             elif "opening" in sel_lower: key = "opening"
@@ -108,7 +117,6 @@ if dev_upload and temp_upload:
             active_settings = current_config[key]
 
             # --- METRICS ROW ---
-            st.subheader(f"📊 Performance Metrics: {selected}")
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
@@ -117,7 +125,7 @@ if dev_upload and temp_upload:
                 (f"Max {selected}", f"{active_settings['max']:.4f}"),
                 ("Min Temp", f"{t_min_obs:.1f} °C" if pd.notnull(t_min_obs) else "—"),
                 ("Max Temp", f"{t_max_obs:.1f} °C" if pd.notnull(t_max_obs) else "—"),
-                (f"PPM Error", active_settings["ppm"])
+                (f"{selected} PPM", active_settings["ppm"])
             ]
 
             for i, (label, val) in enumerate(metrics_data):
@@ -125,41 +133,41 @@ if dev_upload and temp_upload:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
             # --- PLOTTING ---
+            step = 1 if len(df_full) < 50000 else 2
+            df_plot = df_full.iloc[::step]
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Primary Plot: Device Parameter
             fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
-                marker=dict(size=4, color="#00CCFF", opacity=0.5),
+                x=df_plot['Full_Time'], y=df_plot[selected], mode='markers', 
+                marker=dict(size=3, color="#00CCFF", opacity=0.4),
                 name=f"{selected}",
                 hovertemplate="Time: %{x}<br>Value: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Secondary Plot: Chamber Temperature
             temp_points = df_full.dropna(subset=['Temp'])
             fig.add_trace(go.Scattergl(
                 x=temp_points['Full_Time'], y=temp_points['Temp'], mode='markers',
                 marker=dict(size=6, color="#FFD700", symbol='circle'),
-                name="Chamber Temp",
+                name="Temp",
                 hovertemplate="Time: %{x}<br>Temp: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", height=600,
-                xaxis=dict(title="Time", rangeslider=dict(visible=True, thickness=0.05)),
-                yaxis=dict(title=f"<b>{selected}</b>", range=active_settings["range"], color="#00CCFF"),
-                yaxis2=dict(title="<b>Temperature (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700"),
-                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
-                margin=dict(l=20, r=20, t=50, b=20)
+                template="plotly_dark", height=650,
+                dragmode="pan", hovermode="closest",
+                xaxis=dict(title="<b>Time Stamp</b>", rangeslider=dict(visible=True, thickness=0.06), fixedrange=False),
+                yaxis=dict(title=f"<b>{selected}</b>", range=active_settings["range"], color="#00CCFF", fixedrange=False),
+                yaxis2=dict(title="<b>Temp (°C)</b>", range=TEMP_WINDOW_ZOOMED, side='right', color="#FFD700", fixedrange=False),
+                margin=dict(t=30, b=10),
+                legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center")
             )
             
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # --- DATA TABLE ---
-            st.subheader("📑 Full Time-Sync Dataset")
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True})
+            st.divider()
+            st.subheader("📄 Original Dataset")
             st.dataframe(df_full.fillna("—"), use_container_width=True, height=400)
             
     except Exception as e:
-        st.error(f"Error during processing: {e}")
+        st.error(f"Error: {e}")
 else:
-    st.info("👋 Welcome! Please upload your Device Log and Chamber Temperature CSVs to start.")
+    st.info("Upload CSV files to begin.")
