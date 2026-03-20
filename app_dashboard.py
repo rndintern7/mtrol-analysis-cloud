@@ -86,13 +86,9 @@ temp_upload = st.sidebar.file_uploader("Upload Chamber CSV", type=['csv'])
 
 if dev_upload and temp_upload:
     try:
-        # --- AUTO-DETECTION LOGIC ---
-        # Checks if 'MT4' is in the filename. Case-insensitive.
+        # Silent Detection: Determine config based on filename without displaying it
         is_mt4 = "MT4" in dev_upload.name.upper()
-        device_label = "MT4" if is_mt4 else "MT3"
         current_config = MT4_CONFIG if is_mt4 else MT3_CONFIG
-        
-        st.sidebar.success(f"✅ Auto-Detected: **{device_label}**")
 
         df_full = load_and_sync(dev_upload, temp_upload)
         
@@ -112,7 +108,7 @@ if dev_upload and temp_upload:
             active_settings = current_config[key]
 
             # --- METRICS ROW ---
-            st.subheader(f"📊 {device_label} Performance Metrics: {selected}")
+            st.subheader(f"📊 Performance Metrics: {selected}")
             cols = st.columns(5)
             t_min_obs, t_max_obs = df_full['Temp'].min(), df_full['Temp'].max()
             
@@ -135,7 +131,7 @@ if dev_upload and temp_upload:
             fig.add_trace(go.Scattergl(
                 x=df_full['Full_Time'], y=df_full[selected], mode='markers', 
                 marker=dict(size=4, color="#00CCFF", opacity=0.5),
-                name=f"{selected} ({device_label})",
+                name=f"{selected}",
                 hovertemplate="Time: %{x}<br>Value: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
