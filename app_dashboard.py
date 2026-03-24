@@ -24,6 +24,7 @@ st.markdown("""
     .metric-label { font-size: 12px !important; font-weight: 700; color: #FFD700; margin-bottom: 5px; text-transform: uppercase; }
     .metric-value { font-size: 14px !important; color: #ffffff; line-height: 1.3; }
     .ppm-value { font-size: 26px !important; font-weight: 800; color: #ffffff !important; }
+    .main-title { font-size: 32px; font-weight: 800; color: #ffffff; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,21 +47,18 @@ def load_and_process(dev_file, temp_file):
         if col != d_time_col:
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
-    # Store Raw Stats for 100% Accuracy in Dashboard Boxes
     raw_stats = {}
     for col in df_d.columns:
         if col != d_time_col:
             raw_stats[col] = {'max': df_d[col].max(), 'min': df_d[col].min()}
 
-    # 3. Synchronize & Fill Gaps
+    # 3. Synchronize & Fill
     df_d_sync = df_d.groupby(d_time_col).mean().sort_index()
     combined = pd.concat([df_d_sync, df_t], axis=1)
-    
-    # Forward fill Temp to match high-frequency device data
     combined['Temp'] = combined['Temp'].ffill().bfill()
     combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
     
-    # Performance Downsampling (40,000 point limit for high-speed responsiveness)
+    # Downsampling for performance
     plot_data = combined.copy()
     if len(plot_data) > 40000:
         factor = len(plot_data) // 40000
@@ -109,7 +107,7 @@ if dev_upload and temp_upload and std_upload:
                 std_range = s_max - s_min
                 ppm = ((d_max - d_min) * 1_000_000) / ((t_max - t_min) * std_range) if (t_max-t_min)*std_range != 0 else 0
                 
-                # --- PPM DASH LOGIC ---
+                # Flow Rate Dash Logic
                 if "FLOW" in selected_param.upper() and round(ppm, 2) == 0:
                     ppm_display = "-"
                 else:
@@ -117,8 +115,10 @@ if dev_upload and temp_upload and std_upload:
             else:
                 s_max, s_min, ppm_display = "N/A", "N/A", "-"
 
+            # --- HEADER REPLACEMENT ---
+            st.markdown('<div class="main-title">Universal Precision Analytics</div>', unsafe_allow_html=True)
+            
             # --- DASHBOARD METRICS ---
-            st.subheader(f"Dashboard: {selected_param}")
             cols = st.columns(4)
             m_data = [
                 (f"{selected_param} Range", f"Min: {d_min:.4f}<br>Max: {d_max:.4f}"),
@@ -133,7 +133,7 @@ if dev_upload and temp_upload and std_upload:
             # --- DOTTED SCATTER PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Trace 1: Selected Parameter (SKY BLUE Circles)
+            # Sky Blue Markers
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot[selected_param], 
                 mode='markers', name=selected_param,
@@ -141,7 +141,7 @@ if dev_upload and temp_upload and std_upload:
                 hovertemplate="Val: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Trace 2: Chamber Temp (YELLOW Circles)
+            # Yellow Markers
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot['Temp'], 
                 mode='markers', name="Chamber Temp",
@@ -161,19 +161,8 @@ if dev_upload and temp_upload and std_upload:
                     spikethickness=1,
                     rangeslider=dict(visible=True, thickness=0.04)
                 ),
-                yaxis=dict(
-                    title=f"<b>{selected_param}</b>", 
-                    color="skyblue", # Matched to markers
-                    range=y_range, 
-                    fixedrange=False
-                ),
-                yaxis2=dict(
-                    title="<b>Temp (°C)</b>", 
-                    side="right", 
-                    color="#FFD700", 
-                    range=[-20, 80], 
-                    fixedrange=False
-                ),
+                yaxis=dict(title=f"<b>{selected_param}</b>", color="skyblue", range=y_range, fixedrange=False),
+                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80], fixedrange=False),
                 legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
                 dragmode='zoom'
             )
@@ -183,4 +172,4 @@ if dev_upload and temp_upload and std_upload:
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("Upload files to generate analysis.")
+    st.info("Awaiting file uploads.")
