@@ -24,7 +24,14 @@ st.markdown("""
     .metric-label { font-size: 12px !important; font-weight: 700; color: #FFD700; margin-bottom: 5px; text-transform: uppercase; }
     .metric-value { font-size: 14px !important; color: #ffffff; line-height: 1.3; }
     .ppm-value { font-size: 26px !important; font-weight: 800; color: #ffffff !important; }
-    .main-title { font-size: 32px; font-weight: 800; color: #ffffff; margin-bottom: 20px; }
+    .main-title { 
+        font-size: 36px; 
+        font-weight: 800; 
+        color: #ffffff; 
+        margin-bottom: 25px; 
+        border-left: 5px solid #87CEEB; 
+        padding-left: 15px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -58,7 +65,7 @@ def load_and_process(dev_file, temp_file):
     combined['Temp'] = combined['Temp'].ffill().bfill()
     combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
     
-    # Downsampling for performance
+    # Performance Downsampling (40,000 points)
     plot_data = combined.copy()
     if len(plot_data) > 40000:
         factor = len(plot_data) // 40000
@@ -115,8 +122,8 @@ if dev_upload and temp_upload and std_upload:
             else:
                 s_max, s_min, ppm_display = "N/A", "N/A", "-"
 
-            # --- HEADER REPLACEMENT ---
-            st.markdown('<div class="main-title">Universal Precision Analytics</div>', unsafe_allow_html=True)
+            # --- UPDATED HEADER ---
+            st.markdown('<div class="main-title">Universal Precision Analytical Dashboard</div>', unsafe_allow_html=True)
             
             # --- DASHBOARD METRICS ---
             cols = st.columns(4)
@@ -133,7 +140,7 @@ if dev_upload and temp_upload and std_upload:
             # --- DOTTED SCATTER PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Sky Blue Markers
+            # Sky Blue Markers for Selected Parameter
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot[selected_param], 
                 mode='markers', name=selected_param,
@@ -141,7 +148,7 @@ if dev_upload and temp_upload and std_upload:
                 hovertemplate="Val: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Yellow Markers
+            # Yellow Markers for Chamber Temp
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot['Temp'], 
                 mode='markers', name="Chamber Temp",
@@ -172,4 +179,4 @@ if dev_upload and temp_upload and std_upload:
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("Awaiting file uploads.")
+    st.info("Please upload your data files to initialize the Analytical Dashboard.")
