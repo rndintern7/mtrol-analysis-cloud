@@ -5,7 +5,7 @@ from plotly.subplots import make_subplots
 import re
 
 # 1. Page Configuration
-st.set_page_config(page_title="Universal Precision Analytics", layout="wide")
+st.set_page_config(page_title="Universal Precision Analytical Dashboard", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
