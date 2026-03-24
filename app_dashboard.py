@@ -7,7 +7,7 @@ import re
 # 1. Page Configuration
 st.set_page_config(page_title="Universal Precision Analytics", layout="wide")
 
-# --- CUSTOM CSS FOR NEAT METRIC LAYOUT ---
+# --- CUSTOM CSS FOR 4-COLUMN NEAT LAYOUT ---
 st.markdown("""
     <style>
     .metric-container {
@@ -20,11 +20,6 @@ st.markdown("""
         display: flex;
         flex-direction: column;
         justify-content: center;
-        transition: transform 0.2s;
-    }
-    .metric-container:hover {
-        border-color: #FFD700;
-        transform: translateY(-2px);
     }
     .metric-label { 
         font-size: 13px !important; 
@@ -32,7 +27,6 @@ st.markdown("""
         color: #FFD700; 
         margin-bottom: 8px; 
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     .metric-value { 
         font-size: 15px !important; 
@@ -43,13 +37,13 @@ st.markdown("""
     .ppm-value { 
         font-size: 28px !important; 
         font-weight: 800; 
-        color: #ffffff !important; /* Numeric value in White */
+        color: #ffffff !important; 
     }
     </style>
     """, unsafe_allow_html=True)
 
 @st.cache_data
-def load_and_sync(dev_file, temp_file):
+def load_and_process(dev_file, temp_file):
     # Process Chamber Temp Data
     df_t = pd.read_csv(temp_file).dropna(how='all')
     t_time_col = 'Time Stamp' if 'Time Stamp' in df_t.columns else df_t.columns[0]
@@ -57,7 +51,7 @@ def load_and_sync(dev_file, temp_file):
     
     df_t = df_t[[t_time_col, t_val_col]].rename(columns={t_time_col: 'Timestamp', t_val_col: 'Temp'})
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
-    df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
+    df_t_sync = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
     # Process Device Data
     df_d = pd.read_csv(dev_file)
@@ -68,31 +62,37 @@ def load_and_sync(dev_file, temp_file):
         if col != d_time_col:
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
-    df_d = df_d.groupby(d_time_col).mean().sort_index()
+    # Capture Absolute Peak Values BEFORE syncing
+    raw_stats = {}
+    for col in df_d.columns:
+        if col != d_time_col:
+            raw_stats[col] = {'max': df_d[col].max(), 'min': df_d[col].min()}
 
-    # Synchronize
-    combined = pd.concat([df_d, df_t], axis=1)
-    combined = combined.loc[df_d.index.min() : df_d.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
-    return combined
+    # Synchronize for plotting
+    df_d_sync = df_d.groupby(d_time_col).mean().sort_index()
+    combined = pd.concat([df_d_sync, df_t_sync], axis=1)
+    combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
+    
+    return combined, raw_stats
 
 # --- SIDEBAR ---
-st.sidebar.header("📁 Data Sources")
-dev_upload = st.sidebar.file_uploader("1. Device Data (MT3/MT4/MUPT)", type=['csv'])
+st.sidebar.header("📁 Step 1: Upload Files")
+dev_upload = st.sidebar.file_uploader("1. Device Data (MT3/MT4)", type=['csv'])
 temp_upload = st.sidebar.file_uploader("2. Chamber_Temp.csv", type=['csv'])
 std_upload = st.sidebar.file_uploader("3. Standard_Limits_MTrol.csv", type=['csv'])
 
 if dev_upload and temp_upload and std_upload:
     try:
-        df_full = load_and_sync(dev_upload, temp_upload)
+        df_plot, device_raw_stats = load_and_process(dev_upload, temp_upload)
         df_std = pd.read_csv(std_upload)
         
         excluded = ['Full_Time', 'Temp', 'Timestamp', 'Unnamed']
-        param_options = [c for c in df_full.columns if not any(x in c for x in excluded)]
+        param_options = [c for c in df_plot.columns if not any(x in c for x in excluded)]
         
         if param_options:
-            selected_param = st.sidebar.selectbox("Analysis Parameter", param_options)
+            selected_param = st.sidebar.selectbox("Select Parameter", param_options)
             
-            # --- Y-AXIS RANGE LOGIC ---
+            # --- Y-AXIS RANGES ---
             fname = dev_upload.name.upper()
             y_range = None
             if "MT4" in fname:
@@ -104,9 +104,10 @@ if dev_upload and temp_upload and std_upload:
                 for k, v in ranges.items():
                     if k in selected_param.upper(): y_range = v
 
-            # --- MATH CALCULATIONS ---
-            d_max, d_min = df_full[selected_param].max(), df_full[selected_param].min()
-            t_max, t_min = df_full['Temp'].max(), df_full['Temp'].min()
+            # --- CALCULATIONS ---
+            d_max = device_raw_stats[selected_param]['max']
+            d_min = device_raw_stats[selected_param]['min']
+            t_max, t_min = df_plot['Temp'].max(), df_plot['Temp'].min()
             
             match_key = re.escape(selected_param.split(' ')[0])
             std_row = df_std[df_std['Parameters'].str.contains(match_key, case=False, na=False)]
@@ -119,57 +120,72 @@ if dev_upload and temp_upload and std_upload:
                 s_max, s_min, ppm = "N/A", "N/A", 0
 
             # --- 4 NEAT METRIC BOXES ---
-            st.subheader(f"Dashboard: {selected_param}")
+            st.subheader(f"Analysis Dashboard: {selected_param}")
             cols = st.columns(4)
-            
             m_data = [
                 (f"{selected_param} Range", f"Min: {d_min:.4f}<br>Max: {d_max:.4f}"),
                 ("Chamber Temp Range", f"Min: {t_min:.2f}°C<br>Max: {t_max:.2f}°C"),
                 (f"{selected_param} Standard Range", f"Min: {s_min}<br>Max: {s_max}"),
                 (f"{selected_param} PPM", f"<div class='ppm-value'>{ppm:.2f}</div>")
             ]
-
             for i, (label, val) in enumerate(m_data):
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- INTERACTIVE SCATTER PLOT ---
+            # --- PLOT WITH DOT CURSOR & UNIFIED HOVER ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Trace 1: Parameter (Blue)
+            # Trace 1: Parameter (Blue Markers)
             fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full[selected_param], 
+                x=df_plot['Full_Time'], y=df_plot[selected_param], 
                 mode='markers', name=selected_param,
-                marker=dict(color='#007BFF', size=6, opacity=0.7),
-                hovertemplate="Value: %{y:.4f}<extra></extra>"
+                marker=dict(color='#007BFF', size=6, opacity=0.8),
+                hovertemplate=f"Value: %{{y:.4f}}<extra></extra>" # Tooltip content
             ), secondary_y=False)
 
-            # Trace 2: Temp (Yellow)
+            # Trace 2: Temperature (Yellow Markers)
             fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full['Temp'], 
+                x=df_plot['Full_Time'], y=df_plot['Temp'], 
                 mode='markers', name="Chamber Temp",
-                marker=dict(color='#FFD700', size=6, opacity=0.7),
-                hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
+                marker=dict(color='#FFD700', size=6, opacity=0.8),
+                hovertemplate="Temp: %{y:.2f}°C<extra></extra>" # Tooltip content
             ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", height=650,
-                hovermode='x unified', # Shows all data for the time under cursor
+                template="plotly_dark", height=680,
+                hovermode='x unified', # Unified Hover: Shows Time + Both Values
                 xaxis=dict(
                     title="Time Stamp", 
-                    rangeslider=dict(visible=True, thickness=0.04),
-                    type='date'
+                    type='date',
+                    showspikes=True, 
+                    spikemode='markers+across', # Shows the 'Dot' on the data point and a line
+                    spikesnap='cursor',
+                    spikethickness=1,
+                    spikecolor="#999999",
+                    rangeslider=dict(visible=True, thickness=0.04)
                 ),
-                yaxis=dict(title=f"<b>{selected_param}</b>", color="#007BFF", range=y_range, fixedrange=False),
-                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80], fixedrange=False),
-                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
-                dragmode='zoom' # Default cursor is zoom
+                yaxis=dict(
+                    title=f"<b>{selected_param}</b>", 
+                    color="#007BFF", 
+                    range=y_range, 
+                    fixedrange=False # Enables Vertical Zoom
+                ),
+                yaxis2=dict(
+                    title="<b>Chamber Temp (°C)</b>", 
+                    side="right", 
+                    color="#FFD700", 
+                    range=[-20, 80], 
+                    fixedrange=False # Enables Vertical Zoom
+                ),
+                legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+                dragmode='zoom', # Allows you to draw boxes to zoom in
+                margin=dict(l=20, r=20, t=100, b=20)
             )
             
-            # Display the plot
+            # Render plot with scroll zoom enabled
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displaylogo': False})
 
     except Exception as e:
-        st.error(f"Execution Error: {e}")
+        st.error(f"Error: {e}")
 else:
-    st.info("Upload your Device Data, Chamber_Temp.csv, and Standard_Limits_MTrol.csv to begin.")
+    st.info("Awaiting file uploads to generate analysis.")
