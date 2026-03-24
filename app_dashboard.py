@@ -4,26 +4,47 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import re
 
-# 1. Page Config
+# 1. Page Configuration
 st.set_page_config(page_title="Universal Precision Analytics", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS FOR NEAT METRIC LAYOUT ---
 st.markdown("""
     <style>
     .metric-container {
         text-align: center;
-        padding: 15px 10px;
+        padding: 20px 10px;
         background-color: #1e1e1e;
-        border-radius: 10px;
-        border: 1px solid #333;
-        min-height: 110px;
+        border-radius: 12px;
+        border: 1px solid #444;
+        min-height: 120px;
         display: flex;
         flex-direction: column;
         justify-content: center;
+        transition: transform 0.2s;
     }
-    .metric-label { font-size: 13px !important; font-weight: 700; color: #FFD700; margin-bottom: 5px; text-transform: uppercase; }
-    .metric-value { font-size: 15px !important; font-weight: 400; color: #ffffff; line-height: 1.4; }
-    .ppm-value { font-size: 24px !important; font-weight: 800; color: #ffffff; } /* Updated to White */
+    .metric-container:hover {
+        border-color: #FFD700;
+        transform: translateY(-2px);
+    }
+    .metric-label { 
+        font-size: 13px !important; 
+        font-weight: 700; 
+        color: #FFD700; 
+        margin-bottom: 8px; 
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .metric-value { 
+        font-size: 15px !important; 
+        font-weight: 400; 
+        color: #ffffff; 
+        line-height: 1.5; 
+    }
+    .ppm-value { 
+        font-size: 28px !important; 
+        font-weight: 800; 
+        color: #ffffff !important; /* Numeric value in White */
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -55,10 +76,10 @@ def load_and_sync(dev_file, temp_file):
     return combined
 
 # --- SIDEBAR ---
-st.sidebar.header("📁 Step 1: Data Upload")
-dev_upload = st.sidebar.file_uploader("Upload Device CSV (MT3/MT4/MUPT)", type=['csv'])
-temp_upload = st.sidebar.file_uploader("Upload Chamber_Temp.csv", type=['csv'])
-std_upload = st.sidebar.file_uploader("Upload Standard_Limits_MTrol.csv", type=['csv'])
+st.sidebar.header("📁 Data Sources")
+dev_upload = st.sidebar.file_uploader("1. Device Data (MT3/MT4/MUPT)", type=['csv'])
+temp_upload = st.sidebar.file_uploader("2. Chamber_Temp.csv", type=['csv'])
+std_upload = st.sidebar.file_uploader("3. Standard_Limits_MTrol.csv", type=['csv'])
 
 if dev_upload and temp_upload and std_upload:
     try:
@@ -69,9 +90,9 @@ if dev_upload and temp_upload and std_upload:
         param_options = [c for c in df_full.columns if not any(x in c for x in excluded)]
         
         if param_options:
-            selected_param = st.sidebar.selectbox("Select Parameter", param_options)
+            selected_param = st.sidebar.selectbox("Analysis Parameter", param_options)
             
-            # Axis Range Logic
+            # --- Y-AXIS RANGE LOGIC ---
             fname = dev_upload.name.upper()
             y_range = None
             if "MT4" in fname:
@@ -83,9 +104,10 @@ if dev_upload and temp_upload and std_upload:
                 for k, v in ranges.items():
                     if k in selected_param.upper(): y_range = v
 
-            # PPM Calculation logic
+            # --- MATH CALCULATIONS ---
             d_max, d_min = df_full[selected_param].max(), df_full[selected_param].min()
             t_max, t_min = df_full['Temp'].max(), df_full['Temp'].min()
+            
             match_key = re.escape(selected_param.split(' ')[0])
             std_row = df_std[df_std['Parameters'].str.contains(match_key, case=False, na=False)]
             
@@ -93,39 +115,61 @@ if dev_upload and temp_upload and std_upload:
                 s_max, s_min = std_row.iloc[0]['Maximum Value'], std_row.iloc[0]['Minimum Value']
                 std_range = s_max - s_min
                 ppm = ((d_max - d_min) * 1_000_000) / ((t_max - t_min) * std_range) if (t_max-t_min)*std_range != 0 else 0
-                std_name = std_row.iloc[0]['Parameters']
             else:
-                ppm, s_max, s_min, std_name = 0, "N/A", "N/A", "Not Found"
+                s_max, s_min, ppm = "N/A", "N/A", 0
 
-            # --- METRICS (UPDATED LABELS) ---
-            st.subheader(f"Results: {selected_param}")
-            cols = st.columns(5)
+            # --- 4 NEAT METRIC BOXES ---
+            st.subheader(f"Dashboard: {selected_param}")
+            cols = st.columns(4)
+            
             m_data = [
                 (f"{selected_param} Range", f"Min: {d_min:.4f}<br>Max: {d_max:.4f}"),
-                ("Temp Range", f"Min: {t_min:.2f}°C<br>Max: {t_max:.2f}°C"),
+                ("Chamber Temp Range", f"Min: {t_min:.2f}°C<br>Max: {t_max:.2f}°C"),
                 (f"{selected_param} Standard Range", f"Min: {s_min}<br>Max: {s_max}"),
-                ("Parameter Selected", std_name),
                 (f"{selected_param} PPM", f"<div class='ppm-value'>{ppm:.2f}</div>")
             ]
-            for i, (l, v) in enumerate(m_data):
-                with cols[i]:
-                    st.markdown(f'<div class="metric-container"><div class="metric-label">{l}</div><div class="metric-value">{v}</div></div>', unsafe_allow_html=True)
 
-            # --- SCATTER PLOT ---
+            for i, (label, val) in enumerate(m_data):
+                with cols[i]:
+                    st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
+
+            # --- INTERACTIVE SCATTER PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-            fig.add_trace(go.Scattergl(x=df_full['Full_Time'], y=df_full[selected_param], mode='markers', name=selected_param, marker=dict(color='#007BFF', size=5)), secondary_y=False)
-            fig.add_trace(go.Scattergl(x=df_full['Full_Time'], y=df_full['Temp'], mode='markers', name="Chamber Temperature", marker=dict(color='#FFD700', size=5)), secondary_y=True)
+            
+            # Trace 1: Parameter (Blue)
+            fig.add_trace(go.Scattergl(
+                x=df_full['Full_Time'], y=df_full[selected_param], 
+                mode='markers', name=selected_param,
+                marker=dict(color='#007BFF', size=6, opacity=0.7),
+                hovertemplate="Value: %{y:.4f}<extra></extra>"
+            ), secondary_y=False)
+
+            # Trace 2: Temp (Yellow)
+            fig.add_trace(go.Scattergl(
+                x=df_full['Full_Time'], y=df_full['Temp'], 
+                mode='markers', name="Chamber Temp",
+                marker=dict(color='#FFD700', size=6, opacity=0.7),
+                hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
+            ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", height=600,
-                xaxis=dict(title="Time Stamp", rangeslider=dict(visible=True, thickness=0.04)),
-                yaxis=dict(title=f"<b>{selected_param}</b>", color="#007BFF", range=y_range),
-                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80]),
-                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center")
+                template="plotly_dark", height=650,
+                hovermode='x unified', # Shows all data for the time under cursor
+                xaxis=dict(
+                    title="Time Stamp", 
+                    rangeslider=dict(visible=True, thickness=0.04),
+                    type='date'
+                ),
+                yaxis=dict(title=f"<b>{selected_param}</b>", color="#007BFF", range=y_range, fixedrange=False),
+                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80], fixedrange=False),
+                legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
+                dragmode='zoom' # Default cursor is zoom
             )
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display the plot
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displaylogo': False})
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Execution Error: {e}")
 else:
-    st.info("Please upload Device Data, Chamber_Temp.csv, and Standard_Limits_MTrol.csv.")
+    st.info("Upload your Device Data, Chamber_Temp.csv, and Standard_Limits_MTrol.csv to begin.")
