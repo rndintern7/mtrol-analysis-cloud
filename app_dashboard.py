@@ -123,7 +123,7 @@ if dev_upload and temp_upload and std_upload:
                 s_max, s_min, ppm_display = "N/A", "N/A", "-"
 
             # --- UPDATED HEADER ---
-            st.markdown('<div class="main-title">Universal Precision Analytical Dashboard</div>', unsafe_allow_html=True)
+            st.markdown('<div class="main-title">Analytical Dashboard</div>', unsafe_allow_html=True)
             
             # --- DASHBOARD METRICS ---
             cols = st.columns(4)
