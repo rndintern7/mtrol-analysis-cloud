@@ -7,7 +7,7 @@ import re
 # 1. Page Configuration
 st.set_page_config(page_title="Universal Precision Analytics", layout="wide")
 
-# --- CUSTOM CSS FOR NEAT LAYOUT ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
     .metric-container {
@@ -46,23 +46,27 @@ def load_and_process(dev_file, temp_file):
         if col != d_time_col:
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
-    # Store Raw Stats for Accuracy in Boxes
+    # Store Raw Stats for 100% Accuracy in Boxes
     raw_stats = {}
     for col in df_d.columns:
         if col != d_time_col:
             raw_stats[col] = {'max': df_d[col].max(), 'min': df_d[col].min()}
 
-    # 3. Synchronize
+    # 3. Synchronize & Fill Gaps
     df_d_sync = df_d.groupby(d_time_col).mean().sort_index()
     combined = pd.concat([df_d_sync, df_t], axis=1)
+    
+    # CRITICAL: Forward fill Temp so it matches the 1-second device data frequency
+    combined['Temp'] = combined['Temp'].ffill().bfill()
+    
+    # Trim to device data range
     combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
     
-    # --- SMART DOWNSAMPLING FOR PLOT PERFORMANCE ---
-    # If data is > 10k points, we downsample for the graph only
+    # --- BALANCED DOWNSAMPLING FOR PERFORMANCE ---
+    # Increased to 40,000 points for higher resolution
     plot_data = combined.copy()
-    if len(plot_data) > 10000:
-        # Calculate factor to get roughly 8000 points
-        factor = len(plot_data) // 8000
+    if len(plot_data) > 40000:
+        factor = len(plot_data) // 40000
         plot_data = plot_data.iloc[::factor].reset_index(drop=True)
     
     return plot_data, raw_stats
@@ -84,7 +88,7 @@ if dev_upload and temp_upload and std_upload:
         if param_options:
             selected_param = st.sidebar.selectbox("Analysis Parameter", param_options)
             
-            # --- Y-AXIS LOGIC ---
+            # --- Y-AXIS LIMITS ---
             fname = dev_upload.name.upper()
             y_range = None
             if "MT4" in fname:
@@ -96,7 +100,7 @@ if dev_upload and temp_upload and std_upload:
                 for k, v in ranges.items():
                     if k in selected_param.upper(): y_range = v
 
-            # --- CALCULATIONS (RAW PEAK ACCURACY) ---
+            # --- STATS CALCULATION ---
             d_max, d_min = device_raw_stats[selected_param]['max'], device_raw_stats[selected_param]['min']
             t_max, t_min = df_plot['Temp'].max(), df_plot['Temp'].min()
             
@@ -110,7 +114,7 @@ if dev_upload and temp_upload and std_upload:
             else:
                 s_max, s_min, ppm = "N/A", "N/A", 0
 
-            # --- 4 NEAT METRIC BOXES ---
+            # --- 4 DASHBOARD METRICS ---
             st.subheader(f"Dashboard: {selected_param}")
             cols = st.columns(4)
             m_data = [
@@ -123,33 +127,35 @@ if dev_upload and temp_upload and std_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- OPTIMIZED INTERACTIVE PLOT ---
+            # --- RESPONSIVE PLOT WITH DOT CURSOR ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Trace 1: Parameter
+            # Parameter Trace (Blue) - Using 'lines' mode to ensure no visual gaps
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot[selected_param], 
-                mode='markers', name=selected_param,
-                marker=dict(color='#007BFF', size=5, opacity=0.8),
+                mode='lines+markers', name=selected_param,
+                marker=dict(size=4, opacity=0.8),
+                line=dict(width=1, color='#007BFF'),
+                connectgaps=True,
                 hovertemplate="Val: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Trace 2: Temperature
+            # Temperature Trace (Yellow)
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot['Temp'], 
-                mode='markers', name="Temp",
-                marker=dict(color='#FFD700', size=5, opacity=0.8),
+                mode='lines', name="Chamber Temp",
+                line=dict(width=2, color='#FFD700'),
+                connectgaps=True,
                 hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
             fig.update_layout(
-                template="plotly_dark", height=600,
+                template="plotly_dark", height=650,
                 hovermode='x unified',
-                hoverdistance=10, # Increases cursor snap speed
                 xaxis=dict(
                     title="Time Stamp", 
                     showspikes=True, 
-                    spikemode='marker+across', # The dot cursor shape
+                    spikemode='marker+across', # The "Dot" cursor
                     spikesnap='data',
                     spikecolor="#ffffff",
                     spikethickness=1,
@@ -158,13 +164,12 @@ if dev_upload and temp_upload and std_upload:
                 yaxis=dict(title=selected_param, color="#007BFF", range=y_range, fixedrange=False),
                 yaxis2=dict(title="Temp (°C)", side="right", color="#FFD700", range=[-20, 80], fixedrange=False),
                 legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
-                dragmode='zoom',
-                margin=dict(l=10, r=10, t=80, b=10)
+                dragmode='zoom'
             )
             
-            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displaylogo': False, 'frameMargins': 0})
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displaylogo': False})
 
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("Upload files to begin.")
+    st.info("Upload the CSV files to generate the interactive dashboard.")
