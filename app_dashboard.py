@@ -46,7 +46,7 @@ def load_and_process(dev_file, temp_file):
         if col != d_time_col:
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
-    # Store Raw Stats for 100% Accuracy in Boxes
+    # Store Raw Stats for 100% Accuracy in Dashboard Boxes
     raw_stats = {}
     for col in df_d.columns:
         if col != d_time_col:
@@ -60,7 +60,7 @@ def load_and_process(dev_file, temp_file):
     combined['Temp'] = combined['Temp'].ffill().bfill()
     combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
     
-    # Performance Downsampling (40,000 point limit for responsiveness)
+    # Performance Downsampling (40,000 point limit for high-speed responsiveness)
     plot_data = combined.copy()
     if len(plot_data) > 40000:
         factor = len(plot_data) // 40000
@@ -110,7 +110,6 @@ if dev_upload and temp_upload and std_upload:
                 ppm = ((d_max - d_min) * 1_000_000) / ((t_max - t_min) * std_range) if (t_max-t_min)*std_range != 0 else 0
                 
                 # --- PPM DASH LOGIC ---
-                # Display '-' if Flow Rate PPM is 0.00
                 if "FLOW" in selected_param.upper() and round(ppm, 2) == 0:
                     ppm_display = "-"
                 else:
@@ -134,15 +133,15 @@ if dev_upload and temp_upload and std_upload:
             # --- DOTTED SCATTER PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Parameter Trace (Light Blue Circles)
+            # Trace 1: Selected Parameter (SKY BLUE Circles)
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot[selected_param], 
                 mode='markers', name=selected_param,
-                marker=dict(color='#ADD8E6', size=4, symbol='circle', opacity=0.8),
+                marker=dict(color='skyblue', size=4, symbol='circle', opacity=0.8),
                 hovertemplate="Val: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Temperature Trace (Yellow Circles)
+            # Trace 2: Chamber Temp (YELLOW Circles)
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot['Temp'], 
                 mode='markers', name="Chamber Temp",
@@ -162,8 +161,19 @@ if dev_upload and temp_upload and std_upload:
                     spikethickness=1,
                     rangeslider=dict(visible=True, thickness=0.04)
                 ),
-                yaxis=dict(title=f"<b>{selected_param}</b>", color="#ADD8E6", range=y_range, fixedrange=False),
-                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80], fixedrange=False),
+                yaxis=dict(
+                    title=f"<b>{selected_param}</b>", 
+                    color="skyblue", # Matched to markers
+                    range=y_range, 
+                    fixedrange=False
+                ),
+                yaxis2=dict(
+                    title="<b>Temp (°C)</b>", 
+                    side="right", 
+                    color="#FFD700", 
+                    range=[-20, 80], 
+                    fixedrange=False
+                ),
                 legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
                 dragmode='zoom'
             )
