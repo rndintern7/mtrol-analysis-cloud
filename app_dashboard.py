@@ -21,9 +21,9 @@ st.markdown("""
         flex-direction: column;
         justify-content: center;
     }
-    .metric-label { font-size: 14px !important; font-weight: 700; color: #FFD700; margin-bottom: 5px; }
+    .metric-label { font-size: 13px !important; font-weight: 700; color: #FFD700; margin-bottom: 5px; text-transform: uppercase; }
     .metric-value { font-size: 15px !important; font-weight: 400; color: #ffffff; line-height: 1.4; }
-    .ppm-value { font-size: 24px !important; font-weight: 800; color: #00FF00; }
+    .ppm-value { font-size: 24px !important; font-weight: 800; color: #ffffff; } /* Updated to White */
     </style>
     """, unsafe_allow_html=True)
 
@@ -71,26 +71,21 @@ if dev_upload and temp_upload and std_upload:
         if param_options:
             selected_param = st.sidebar.selectbox("Select Parameter", param_options)
             
-            # --- DEFINE AXIS RANGES BASED ON FILENAME ---
+            # Axis Range Logic
             fname = dev_upload.name.upper()
             y_range = None
-            
-            # Range Logic for MT4
             if "MT4" in fname:
                 ranges = {"FLOW": [0, 300], "OPEN": [0, 22], "P1": [0, 6], "P2": [0, 12]}
-                for key, val in ranges.items():
-                    if key in selected_param.upper(): y_range = val
-            
-            # Range Logic for MT3
+                for k, v in ranges.items():
+                    if k in selected_param.upper(): y_range = v
             elif "MT3" in fname:
                 ranges = {"FLOW": [0, 320], "OPEN": [0, 24], "P1": [0, 12], "P2": [0, 12]}
-                for key, val in ranges.items():
-                    if key in selected_param.upper(): y_range = val
+                for k, v in ranges.items():
+                    if k in selected_param.upper(): y_range = v
 
-            # --- PPM COMPONENTS ---
+            # PPM Calculation logic
             d_max, d_min = df_full[selected_param].max(), df_full[selected_param].min()
             t_max, t_min = df_full['Temp'].max(), df_full['Temp'].min()
-            
             match_key = re.escape(selected_param.split(' ')[0])
             std_row = df_std[df_std['Parameters'].str.contains(match_key, case=False, na=False)]
             
@@ -102,15 +97,15 @@ if dev_upload and temp_upload and std_upload:
             else:
                 ppm, s_max, s_min, std_name = 0, "N/A", "N/A", "Not Found"
 
-            # --- METRICS ---
-            st.subheader(f"Results: {selected_param} ({'MTrol-4' if 'MT4' in fname else 'MTrol-3' if 'MT3' in fname else 'Generic'})")
+            # --- METRICS (UPDATED LABELS) ---
+            st.subheader(f"Results: {selected_param}")
             cols = st.columns(5)
             m_data = [
-                ("Device Range (Actual)", f"Min: {d_min:.3f}<br>Max: {d_max:.3f}"),
+                (f"{selected_param} Range", f"Min: {d_min:.4f}<br>Max: {d_max:.4f}"),
                 ("Temp Range", f"Min: {t_min:.2f}°C<br>Max: {t_max:.2f}°C"),
-                ("Standard Limit Range", f"Min: {s_min}<br>Max: {s_max}"),
-                ("Matched Standard", std_name),
-                ("Calculated PPM", f"<div class='ppm-value'>{ppm:.2f}</div>")
+                (f"{selected_param} Standard Range", f"Min: {s_min}<br>Max: {s_max}"),
+                ("Parameter Selected", std_name),
+                (f"{selected_param} PPM", f"<div class='ppm-value'>{ppm:.2f}</div>")
             ]
             for i, (l, v) in enumerate(m_data):
                 with cols[i]:
@@ -118,23 +113,14 @@ if dev_upload and temp_upload and std_upload:
 
             # --- SCATTER PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-            
-            fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full[selected_param], mode='markers',
-                name=selected_param, marker=dict(color='#007BFF', size=5, opacity=0.7)
-            ), secondary_y=False)
+            fig.add_trace(go.Scattergl(x=df_full['Full_Time'], y=df_full[selected_param], mode='markers', name=selected_param, marker=dict(color='#007BFF', size=5)), secondary_y=False)
+            fig.add_trace(go.Scattergl(x=df_full['Full_Time'], y=df_full['Temp'], mode='markers', name="Chamber Temperature", marker=dict(color='#FFD700', size=5)), secondary_y=True)
 
-            fig.add_trace(go.Scattergl(
-                x=df_full['Full_Time'], y=df_full['Temp'], mode='markers',
-                name="Chamber Temperature", marker=dict(color='#FFD700', size=5, opacity=0.7)
-            ), secondary_y=True)
-
-            # APPLYING YOUR RANGES
             fig.update_layout(
                 template="plotly_dark", height=600,
                 xaxis=dict(title="Time Stamp", rangeslider=dict(visible=True, thickness=0.04)),
-                yaxis=dict(title=f"<b>{selected_param}</b>", color="#007BFF", range=y_range), # Dynamic parameter range
-                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80]), # Fixed Temp range
+                yaxis=dict(title=f"<b>{selected_param}</b>", color="#007BFF", range=y_range),
+                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80]),
                 legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center")
             )
             st.plotly_chart(fig, use_container_width=True)
