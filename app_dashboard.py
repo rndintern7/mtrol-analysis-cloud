@@ -37,7 +37,7 @@ st.markdown("""
     .ppm-value { 
         font-size: 28px !important; 
         font-weight: 800; 
-        color: #ffffff !important; 
+        color: #ffffff !important; /* Pure white numeric value */
     }
     </style>
     """, unsafe_allow_html=True)
@@ -132,59 +132,63 @@ if dev_upload and temp_upload and std_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- PLOT WITH DOT CURSOR & UNIFIED HOVER ---
+            # --- PLOT WITH SNAP-TO-DOT CURSOR & UNIFIED VALUES ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Trace 1: Parameter (Blue Markers)
+            # Trace 1: Parameter (Blue)
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot[selected_param], 
                 mode='markers', name=selected_param,
                 marker=dict(color='#007BFF', size=6, opacity=0.8),
-                hovertemplate="%{y:.4f}<extra></extra>" 
+                # Explicitly formatted label for the hover box
+                hovertemplate=f"<b>{selected_param}</b>: %{{y:.4f}}<extra></extra>"
             ), secondary_y=False)
 
-            # Trace 2: Temperature (Yellow Markers)
+            # Trace 2: Temperature (Yellow)
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot['Temp'], 
                 mode='markers', name="Chamber Temp",
                 marker=dict(color='#FFD700', size=6, opacity=0.8),
-                hovertemplate="%{y:.2f}°C<extra></extra>"
+                # Explicitly formatted label for the hover box
+                hovertemplate="<b>Chamber Temp</b>: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
             fig.update_layout(
                 template="plotly_dark", height=680,
-                hovermode='x unified', # Shows Time at top + both values in one box
+                hovermode='x unified', # Shows Time at the top of the box + values for both plots
+                hoverlabel=dict(bgcolor="#222", font_size=13, font_family="Arial"),
                 xaxis=dict(
                     title="Time Stamp", 
                     type='date',
                     showspikes=True, 
-                    spikemode='marker+across', # CORRECTED: singular 'marker'
+                    spikemode='marker+across', # Creates the "Dot" cursor on the point
                     spikesnap='cursor',
                     spikethickness=1,
-                    spikecolor="#999999",
+                    spikecolor="#ffffff",
                     rangeslider=dict(visible=True, thickness=0.04)
                 ),
                 yaxis=dict(
                     title=f"<b>{selected_param}</b>", 
                     color="#007BFF", 
                     range=y_range, 
-                    fixedrange=False 
+                    fixedrange=False # Horizontal/Vertical Zoom enabled
                 ),
                 yaxis2=dict(
-                    title="<b>Chamber Temp (°C)</b>", 
+                    title="<b>Temp (°C)</b>", 
                     side="right", 
                     color="#FFD700", 
                     range=[-20, 80], 
-                    fixedrange=False 
+                    fixedrange=False # Horizontal/Vertical Zoom enabled
                 ),
                 legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
-                dragmode='zoom', 
+                dragmode='zoom', # Allows drawing boxes to zoom
                 margin=dict(l=20, r=20, t=100, b=20)
             )
             
+            # config parameter 'scrollZoom' ensures you can zoom with mouse wheel too
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displaylogo': False})
 
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("Awaiting file uploads to generate analysis.")
+    st.info("Awaiting file uploads (Device Data, Chamber Temp, and Standard Limits).")
