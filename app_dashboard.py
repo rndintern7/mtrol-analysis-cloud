@@ -46,7 +46,7 @@ def load_and_process(dev_file, temp_file):
         if col != d_time_col:
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
-    # Store Raw Stats for 100% Accuracy
+    # Store Raw Stats for 100% Accuracy in Boxes
     raw_stats = {}
     for col in df_d.columns:
         if col != d_time_col:
@@ -60,7 +60,7 @@ def load_and_process(dev_file, temp_file):
     combined['Temp'] = combined['Temp'].ffill().bfill()
     combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
     
-    # Performance Downsampling (40,000 point limit)
+    # Performance Downsampling (40,000 point limit for responsiveness)
     plot_data = combined.copy()
     if len(plot_data) > 40000:
         factor = len(plot_data) // 40000
@@ -108,8 +108,15 @@ if dev_upload and temp_upload and std_upload:
                 s_max, s_min = std_row.iloc[0]['Maximum Value'], std_row.iloc[0]['Minimum Value']
                 std_range = s_max - s_min
                 ppm = ((d_max - d_min) * 1_000_000) / ((t_max - t_min) * std_range) if (t_max-t_min)*std_range != 0 else 0
+                
+                # --- PPM DASH LOGIC ---
+                # Display '-' if Flow Rate PPM is 0.00
+                if "FLOW" in selected_param.upper() and round(ppm, 2) == 0:
+                    ppm_display = "-"
+                else:
+                    ppm_display = f"{ppm:.2f}"
             else:
-                s_max, s_min, ppm = "N/A", "N/A", 0
+                s_max, s_min, ppm_display = "N/A", "N/A", "-"
 
             # --- DASHBOARD METRICS ---
             st.subheader(f"Dashboard: {selected_param}")
@@ -118,7 +125,7 @@ if dev_upload and temp_upload and std_upload:
                 (f"{selected_param} Range", f"Min: {d_min:.4f}<br>Max: {d_max:.4f}"),
                 ("Temp Range", f"Min: {t_min:.2f}°C<br>Max: {t_max:.2f}°C"),
                 ("Standard Range", f"Min: {s_min}<br>Max: {s_max}"),
-                ("PPM Value", f"<div class='ppm-value'>{ppm:.2f}</div>")
+                ("PPM Value", f"<div class='ppm-value'>{ppm_display}</div>")
             ]
             for i, (label, val) in enumerate(m_data):
                 with cols[i]:
@@ -127,23 +134,19 @@ if dev_upload and temp_upload and std_upload:
             # --- DOTTED SCATTER PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Trace 1: Selected Parameter (Light Blue Circles)
+            # Parameter Trace (Light Blue Circles)
             fig.add_trace(go.Scattergl(
-                x=df_plot['Full_Time'], 
-                y=df_plot[selected_param], 
-                mode='markers', 
-                name=selected_param,
-                marker=dict(color='#ADD8E6', size=4, symbol='circle', opacity=0.7),
+                x=df_plot['Full_Time'], y=df_plot[selected_param], 
+                mode='markers', name=selected_param,
+                marker=dict(color='#ADD8E6', size=4, symbol='circle', opacity=0.8),
                 hovertemplate="Val: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Trace 2: Chamber Temp (Yellow Circles)
+            # Temperature Trace (Yellow Circles)
             fig.add_trace(go.Scattergl(
-                x=df_plot['Full_Time'], 
-                y=df_plot['Temp'], 
-                mode='markers', 
-                name="Chamber Temp",
-                marker=dict(color='#FFD700', size=4, symbol='circle', opacity=0.7),
+                x=df_plot['Full_Time'], y=df_plot['Temp'], 
+                mode='markers', name="Chamber Temp",
+                marker=dict(color='#FFD700', size=4, symbol='circle', opacity=0.8),
                 hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
@@ -153,7 +156,7 @@ if dev_upload and temp_upload and std_upload:
                 xaxis=dict(
                     title="Time Stamp", 
                     showspikes=True, 
-                    spikemode='marker+across', # The dot cursor
+                    spikemode='marker+across', # Snap-to-dot cursor
                     spikesnap='data',
                     spikecolor="#ffffff",
                     spikethickness=1,
@@ -170,4 +173,4 @@ if dev_upload and temp_upload and std_upload:
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("Please upload the CSV files to start.")
+    st.info("Upload files to generate analysis.")
