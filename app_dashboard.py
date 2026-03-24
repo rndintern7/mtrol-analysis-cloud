@@ -46,7 +46,7 @@ def load_and_process(dev_file, temp_file):
         if col != d_time_col:
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
-    # Store Raw Stats for 100% Accuracy in Boxes
+    # Store Raw Stats for 100% Accuracy
     raw_stats = {}
     for col in df_d.columns:
         if col != d_time_col:
@@ -56,14 +56,11 @@ def load_and_process(dev_file, temp_file):
     df_d_sync = df_d.groupby(d_time_col).mean().sort_index()
     combined = pd.concat([df_d_sync, df_t], axis=1)
     
-    # CRITICAL: Forward fill Temp so it matches the 1-second device data frequency
+    # Forward fill Temp to match high-frequency device data
     combined['Temp'] = combined['Temp'].ffill().bfill()
-    
-    # Trim to device data range
     combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
     
-    # --- BALANCED DOWNSAMPLING FOR PERFORMANCE ---
-    # Increased to 40,000 points for higher resolution
+    # Performance Downsampling (40,000 point limit)
     plot_data = combined.copy()
     if len(plot_data) > 40000:
         factor = len(plot_data) // 40000
@@ -100,7 +97,7 @@ if dev_upload and temp_upload and std_upload:
                 for k, v in ranges.items():
                     if k in selected_param.upper(): y_range = v
 
-            # --- STATS CALCULATION ---
+            # --- CALCULATIONS ---
             d_max, d_min = device_raw_stats[selected_param]['max'], device_raw_stats[selected_param]['min']
             t_max, t_min = df_plot['Temp'].max(), df_plot['Temp'].min()
             
@@ -114,7 +111,7 @@ if dev_upload and temp_upload and std_upload:
             else:
                 s_max, s_min, ppm = "N/A", "N/A", 0
 
-            # --- 4 DASHBOARD METRICS ---
+            # --- DASHBOARD METRICS ---
             st.subheader(f"Dashboard: {selected_param}")
             cols = st.columns(4)
             m_data = [
@@ -127,25 +124,26 @@ if dev_upload and temp_upload and std_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- RESPONSIVE PLOT WITH DOT CURSOR ---
+            # --- DOTTED SCATTER PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Parameter Trace (Blue) - Using 'lines' mode to ensure no visual gaps
+            # Trace 1: Selected Parameter (Light Blue Circles)
             fig.add_trace(go.Scattergl(
-                x=df_plot['Full_Time'], y=df_plot[selected_param], 
-                mode='lines+markers', name=selected_param,
-                marker=dict(size=4, opacity=0.8),
-                line=dict(width=1, color='#007BFF'),
-                connectgaps=True,
+                x=df_plot['Full_Time'], 
+                y=df_plot[selected_param], 
+                mode='markers', 
+                name=selected_param,
+                marker=dict(color='#ADD8E6', size=4, symbol='circle', opacity=0.7),
                 hovertemplate="Val: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Temperature Trace (Yellow)
+            # Trace 2: Chamber Temp (Yellow Circles)
             fig.add_trace(go.Scattergl(
-                x=df_plot['Full_Time'], y=df_plot['Temp'], 
-                mode='lines', name="Chamber Temp",
-                line=dict(width=2, color='#FFD700'),
-                connectgaps=True,
+                x=df_plot['Full_Time'], 
+                y=df_plot['Temp'], 
+                mode='markers', 
+                name="Chamber Temp",
+                marker=dict(color='#FFD700', size=4, symbol='circle', opacity=0.7),
                 hovertemplate="Temp: %{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
@@ -155,14 +153,14 @@ if dev_upload and temp_upload and std_upload:
                 xaxis=dict(
                     title="Time Stamp", 
                     showspikes=True, 
-                    spikemode='marker+across', # The "Dot" cursor
+                    spikemode='marker+across', # The dot cursor
                     spikesnap='data',
                     spikecolor="#ffffff",
                     spikethickness=1,
                     rangeslider=dict(visible=True, thickness=0.04)
                 ),
-                yaxis=dict(title=selected_param, color="#007BFF", range=y_range, fixedrange=False),
-                yaxis2=dict(title="Temp (°C)", side="right", color="#FFD700", range=[-20, 80], fixedrange=False),
+                yaxis=dict(title=f"<b>{selected_param}</b>", color="#ADD8E6", range=y_range, fixedrange=False),
+                yaxis2=dict(title="<b>Temp (°C)</b>", side="right", color="#FFD700", range=[-20, 80], fixedrange=False),
                 legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center"),
                 dragmode='zoom'
             )
@@ -172,4 +170,4 @@ if dev_upload and temp_upload and std_upload:
     except Exception as e:
         st.error(f"Error: {e}")
 else:
-    st.info("Upload the CSV files to generate the interactive dashboard.")
+    st.info("Please upload the CSV files to start.")
