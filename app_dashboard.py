@@ -140,7 +140,7 @@ if dev_upload and temp_upload and std_upload:
                 x=df_plot['Full_Time'], y=df_plot[selected_param], 
                 mode='markers', name=selected_param,
                 marker=dict(color='#007BFF', size=6, opacity=0.8),
-                hovertemplate=f"Value: %{{y:.4f}}<extra></extra>" # Tooltip content
+                hovertemplate="%{y:.4f}<extra></extra>" 
             ), secondary_y=False)
 
             # Trace 2: Temperature (Yellow Markers)
@@ -148,17 +148,17 @@ if dev_upload and temp_upload and std_upload:
                 x=df_plot['Full_Time'], y=df_plot['Temp'], 
                 mode='markers', name="Chamber Temp",
                 marker=dict(color='#FFD700', size=6, opacity=0.8),
-                hovertemplate="Temp: %{y:.2f}°C<extra></extra>" # Tooltip content
+                hovertemplate="%{y:.2f}°C<extra></extra>"
             ), secondary_y=True)
 
             fig.update_layout(
                 template="plotly_dark", height=680,
-                hovermode='x unified', # Unified Hover: Shows Time + Both Values
+                hovermode='x unified', # Shows Time at top + both values in one box
                 xaxis=dict(
                     title="Time Stamp", 
                     type='date',
                     showspikes=True, 
-                    spikemode='markers+across', # Shows the 'Dot' on the data point and a line
+                    spikemode='marker+across', # CORRECTED: singular 'marker'
                     spikesnap='cursor',
                     spikethickness=1,
                     spikecolor="#999999",
@@ -168,21 +168,20 @@ if dev_upload and temp_upload and std_upload:
                     title=f"<b>{selected_param}</b>", 
                     color="#007BFF", 
                     range=y_range, 
-                    fixedrange=False # Enables Vertical Zoom
+                    fixedrange=False 
                 ),
                 yaxis2=dict(
                     title="<b>Chamber Temp (°C)</b>", 
                     side="right", 
                     color="#FFD700", 
                     range=[-20, 80], 
-                    fixedrange=False # Enables Vertical Zoom
+                    fixedrange=False 
                 ),
                 legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
-                dragmode='zoom', # Allows you to draw boxes to zoom in
+                dragmode='zoom', 
                 margin=dict(l=20, r=20, t=100, b=20)
             )
             
-            # Render plot with scroll zoom enabled
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displaylogo': False})
 
     except Exception as e:
