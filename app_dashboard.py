@@ -37,35 +37,46 @@ st.markdown("""
 
 @st.cache_data
 def load_and_process(dev_file, temp_file):
-    # 1. Process Chamber Temp
+    # --- 1. Process Chamber Temp ---
     df_t = pd.read_csv(temp_file).dropna(how='all')
     t_time_col = 'Time Stamp' if 'Time Stamp' in df_t.columns else df_t.columns[0]
     t_val_col = 'Chamber Temperature (°C)' if 'Chamber Temperature (°C)' in df_t.columns else df_t.columns[1]
+    
     df_t = df_t[[t_time_col, t_val_col]].rename(columns={t_time_col: 'Timestamp', t_val_col: 'Temp'})
     df_t['Timestamp'] = pd.to_datetime(df_t['Timestamp'], errors='coerce')
     df_t = df_t.dropna(subset=['Timestamp']).groupby('Timestamp').mean().sort_index()
 
-    # 2. Process Device Data
+    # --- 2. Process Device Data (Universal Handling) ---
     df_d = pd.read_csv(dev_file)
     d_time_col = 'Time Stamp' if 'Time Stamp' in df_d.columns else df_d.columns[0]
     df_d[d_time_col] = pd.to_datetime(df_d[d_time_col], errors='coerce')
+    df_d = df_d.dropna(subset=[d_time_col])
     
+    # Clean numeric columns: Remove units or special chars from data
     for col in df_d.columns:
         if col != d_time_col:
             df_d[col] = pd.to_numeric(df_d[col].astype(str).str.replace(r'[^\d\.\-]', '', regex=True), errors='coerce')
     
+    # Store raw stats for PPM calculation
     raw_stats = {}
     for col in df_d.columns:
         if col != d_time_col:
             raw_stats[col] = {'max': df_d[col].max(), 'min': df_d[col].min()}
 
-    # 3. Synchronize & Fill
+    # --- 3. Synchronize & Merge ---
     df_d_sync = df_d.groupby(d_time_col).mean().sort_index()
-    combined = pd.concat([df_d_sync, df_t], axis=1)
-    combined['Temp'] = combined['Temp'].ffill().bfill()
-    combined = combined.loc[df_d_sync.index.min() : df_d_sync.index.max()].reset_index().rename(columns={'index': 'Full_Time'})
     
-    # Performance Downsampling (40,000 points)
+    # Left join ensures we keep all device data points even if temp is missing at that exact second
+    combined = pd.merge(df_d_sync, df_t, left_index=True, right_index=True, how='left')
+    
+    # Fill temperature gaps (Chamber logs are often slower than Device logs)
+    combined['Temp'] = combined['Temp'].ffill().bfill()
+    
+    # UNIVERSAL FIX: Convert the index back to a column and force the name 'Full_Time'
+    combined = combined.reset_index()
+    combined = combined.rename(columns={combined.columns[0]: 'Full_Time'})
+    
+    # Performance Downsampling
     plot_data = combined.copy()
     if len(plot_data) > 40000:
         factor = len(plot_data) // 40000
@@ -84,13 +95,14 @@ if dev_upload and temp_upload and std_upload:
         df_plot, device_raw_stats = load_and_process(dev_upload, temp_upload)
         df_std = pd.read_csv(std_upload)
         
+        # Filter out internal processing columns
         excluded = ['Full_Time', 'Temp', 'Timestamp', 'Unnamed']
         param_options = [c for c in df_plot.columns if not any(x in c for x in excluded)]
         
         if param_options:
             selected_param = st.sidebar.selectbox("Analysis Parameter", param_options)
             
-            # --- Y-AXIS LIMITS ---
+            # --- Y-AXIS LIMITS (Device Specific) ---
             fname = dev_upload.name.upper()
             y_range = None
             if "MT4" in fname:
@@ -101,20 +113,23 @@ if dev_upload and temp_upload and std_upload:
                 ranges = {"FLOW": [0, 320], "OPEN": [0, 25], "P1": [0, 15], "P2": [0, 15]}
                 for k, v in ranges.items():
                     if k in selected_param.upper(): y_range = v
+            # Auto-scaling for MUPT or others unless specified here
 
             # --- CALCULATIONS ---
             d_max, d_min = device_raw_stats[selected_param]['max'], device_raw_stats[selected_param]['min']
             t_max, t_min = df_plot['Temp'].max(), df_plot['Temp'].min()
             
+            # Match parameter with Standard Limits CSV
             match_key = re.escape(selected_param.split(' ')[0])
             std_row = df_std[df_std['Parameters'].str.contains(match_key, case=False, na=False)]
             
             if not std_row.empty:
                 s_max, s_min = std_row.iloc[0]['Maximum Value'], std_row.iloc[0]['Minimum Value']
                 std_range = s_max - s_min
-                ppm = ((d_max - d_min) * 1_000_000) / ((t_max - t_min) * std_range) if (t_max-t_min)*std_range != 0 else 0
+                # PPM Formula
+                denom = (t_max - t_min) * std_range
+                ppm = ((d_max - d_min) * 1_000_000) / denom if denom != 0 else 0
                 
-                # Flow Rate Dash Logic
                 if "FLOW" in selected_param.upper() and round(ppm, 2) == 0:
                     ppm_display = "-"
                 else:
@@ -122,10 +137,9 @@ if dev_upload and temp_upload and std_upload:
             else:
                 s_max, s_min, ppm_display = "N/A", "N/A", "-"
 
-            # --- UPDATED HEADER ---
+            # --- DASHBOARD UI ---
             st.markdown('<div class="main-title">Analytical Dashboard</div>', unsafe_allow_html=True)
             
-            # --- DASHBOARD METRICS ---
             cols = st.columns(4)
             m_data = [
                 (f"{selected_param} Range", f"Min: {d_min:.4f}<br>Max: {d_max:.4f}"),
@@ -137,10 +151,9 @@ if dev_upload and temp_upload and std_upload:
                 with cols[i]:
                     st.markdown(f'<div class="metric-container"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>', unsafe_allow_html=True)
 
-            # --- DOTTED SCATTER PLOT ---
+            # --- PLOT ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             
-            # Sky Blue Markers for Selected Parameter
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot[selected_param], 
                 mode='markers', name=selected_param,
@@ -148,7 +161,6 @@ if dev_upload and temp_upload and std_upload:
                 hovertemplate="Val: %{y:.4f}<extra></extra>"
             ), secondary_y=False)
 
-            # Yellow Markers for Chamber Temp
             fig.add_trace(go.Scattergl(
                 x=df_plot['Full_Time'], y=df_plot['Temp'], 
                 mode='markers', name="Chamber Temp",
@@ -162,7 +174,7 @@ if dev_upload and temp_upload and std_upload:
                 xaxis=dict(
                     title="Time Stamp", 
                     showspikes=True, 
-                    spikemode='marker+across', # Snap-to-dot cursor
+                    spikemode='marker+across',
                     spikesnap='data',
                     spikecolor="#ffffff",
                     spikethickness=1,
@@ -177,6 +189,6 @@ if dev_upload and temp_upload and std_upload:
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displaylogo': False})
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Dashboard Initialization Error: {e}")
 else:
-    st.info("Please upload your data files to initialize the Analytical Dashboard.")
+    st.info("Please upload Device Data, Chamber Temp, and Standard Limits CSVs to begin.")
